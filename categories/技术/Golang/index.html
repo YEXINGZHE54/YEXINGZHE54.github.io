@@ -8,7 +8,7 @@
   
   
   
-  <title>鱼的记忆</title>
+  <title>分类: Golang | 鱼的记忆</title>
 
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 
@@ -174,270 +174,45 @@
   })
 </script>
 
-      
-<div class="container home-index">
-  
-  <div class="post">
-    <h1 class="article-title">
-      <a href="/passages/golang-http-client-time-wait/">
-        <span>golang-http-client-time-wait</span>
-      </a>
-    </h1>
-    <!-- PC端文章信息 -->
-    <div class="article-top-meta pc-view">
-      <span>
-        发布时间 : 2019-04-16
-      </span>
-    </div>
-    <!-- 移动端文章信息 -->
-    <div class="article-top-meta mobile-view">
-      <span>
-        发布 : 2019-04-16
-      </span>
-      
-        <span>
-        分类 :
-          <a href="/categories/技术/">
-            技术
-          </a>
-        </span>
-      
-      
-    </div>
+      <div class="container">
+  <div class="timeline">
+  <span class="archive-move-on"></span>
+  <span class="archive-page-counter">
     
-    <!-- 文章简介 -->
-    <div class="article-content">
-      <div class="markdown-body article-content--inner" v-html="mdToHtml(psg.summary)">
-        Golang HTTP 客户端连接池的性能问题
-前一阵子使用Golang在开发一个微服务，通过HTTP协议与其他依赖模块交互。当时测试时遇到了一个性能问题，现在记录一下，以做备忘。
-
-问题模型
-服务端代码：
-
-1
-2
-3
-4
-5
-6
-7
-8
-9
-10
-11
-12
-13
-14
-15
-16
-17
-18
-19
-20
-21
-22
-23
-24
-25
-26
-27
-28
-
-
-package main
-
-import (
-	"io/ioutil"
-	"net/http"
-)
-
-const (
-	BACKEND = "http://www.baidu.com"
-)
-
-func Handle(w http.Res
-      </div>
-    </div>
-    <div class="article-footer">
-      <div class="article-meta pull-left">
-        <!-- 分类pc端可见 -->
-        <span class="pc-view">
-          
-            <i class="iconfont icon-tag"></i>分类:
-            <a href="/categories/技术/">
-              技术
-            </a>
-          </span>
-          
-        <span>
-          
-            <i class="iconfont icon-06tags"></i>标签:
-            
-              <span class="span--tag">
-                <a href="/tags/Golang/">
-                  #Golang
-                </a>
-              </span>
-            
-              <span class="span--tag">
-                <a href="/tags/HTTP/">
-                  #HTTP
-                </a>
-              </span>
-            
-              <span class="span--tag">
-                <a href="/tags/TIME-WAIT/">
-                  #TIME_WAIT
-                </a>
-              </span>
-            
-                    
-        </span>
-      </div>
-      
-    </div>
-  </div>
-  
-  <div class="post">
-    <h1 class="article-title">
-      <a href="/passages/druid-connection-retry-loop-and-block/">
-        <span>druid-connection-retry-loop-and-block</span>
-      </a>
-    </h1>
-    <!-- PC端文章信息 -->
-    <div class="article-top-meta pc-view">
-      <span>
-        发布时间 : 2019-04-10
-      </span>
-    </div>
-    <!-- 移动端文章信息 -->
-    <div class="article-top-meta mobile-view">
-      <span>
-        发布 : 2019-04-10
-      </span>
-      
-        <span>
-        分类 :
-          <a href="/categories/技术/">
-            技术
-          </a>
-        </span>
-      
-      
-    </div>
+      <span>当前位于 1/1 页</span>
     
-    <!-- 文章简介 -->
-    <div class="article-content">
-      <div class="markdown-body article-content--inner" v-html="mdToHtml(psg.summary)">
-        Alibaba/Druid 无限次重试报错并阻塞业务线程
-Alibaba/Druid 是一个广受欢迎的开源数据库连接池组件。但是，由于配置不当，也会对服务稳定性产生负面影响。
-
-我们的某个服务提供了一个功能，可以帮助用户随机预览给定数据源上的表数据。但是，当用户提供了错误的IP/Port信息，或者错误的授权信息，或者错误的数据库协议的时候，服务接口未能及时响应，最后网关报504超时，影响用户体验。
-
-查看日志
-为了优化这个环节，我们先查看了应用的异常日志，发现应用仍然在不断的抛出连接失败的异常，并且，抛出异常的线程不是HTTP Worker线程，而是名为Druid-ConnectionPool
-      </div>
-    </div>
-    <div class="article-footer">
-      <div class="article-meta pull-left">
-        <!-- 分类pc端可见 -->
-        <span class="pc-view">
-          
-            <i class="iconfont icon-tag"></i>分类:
-            <a href="/categories/技术/">
-              技术
-            </a>
-          </span>
-          
-        <span>
-          
-            <i class="iconfont icon-06tags"></i>标签:
-            
-              <span class="span--tag">
-                <a href="/tags/Java/">
-                  #Java
-                </a>
-              </span>
-            
-              <span class="span--tag">
-                <a href="/tags/Druid/">
-                  #Druid
-                </a>
-              </span>
-            
-              <span class="span--tag">
-                <a href="/tags/Block/">
-                  #Block
-                </a>
-              </span>
-            
-              <span class="span--tag">
-                <a href="/tags/Debug/">
-                  #Debug
-                </a>
-              </span>
-            
-                    
-        </span>
-      </div>
-      
-    </div>
-  </div>
+  </span>
   
-  <div class="post">
-    <h1 class="article-title">
-      <a href="/passages/hello/">
-        <span>hello</span>
-      </a>
-    </h1>
-    <!-- PC端文章信息 -->
-    <div class="article-top-meta pc-view">
-      <span>
-        发布时间 : 2019-04-08
-      </span>
-    </div>
-    <!-- 移动端文章信息 -->
-    <div class="article-top-meta mobile-view">
-      <span>
-        发布 : 2019-04-08
-      </span>
-      
-      
-    </div>
-    
-    <!-- 文章简介 -->
-    <div class="article-content">
-      <div class="markdown-body article-content--inner" v-html="mdToHtml(psg.summary)">
-        First Commit
-
-
-这是第一篇博客，算是一个新起点，希望未来的你勿忘初心。
-
-本文链接 http://yexingzhe54.github.io/passages/hello/
-      </div>
-    </div>
-    <div class="article-footer">
-      <div class="article-meta pull-left">
-        <!-- 分类pc端可见 -->
-        <span class="pc-view">
-          
-        <span>
-                    
-        </span>
-      </span></div>
-      
-    </div>
-  </div>
   
-
+    <div class="collection-title">
+      <h2>
+        
+          <span>分类 : Golang</span>
+        
+      </h2>
+    </div>
+  
+  
+  
+  <article class="posts-collapse">
+    <header>
+      <h2>
+        <a href="/passages/golang-http-client-time-wait/">
+          <span>golang-http-client-time-wait</span>
+        </a>
+      </h2>
+      <div class="post-meta">
+        04-16
+      </div>
+    </header>
+  </article>
+  
+</div>
   <nav class="page-navigation">
     
     
   </nav>
-
-   
 </div>
-
 
       <footer>
   <p class="site-info">

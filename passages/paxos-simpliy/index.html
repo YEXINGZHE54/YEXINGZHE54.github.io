@@ -8,12 +8,12 @@
   
   
   
-  <title>gossip-protocol | 鱼的记忆</title>
+  <title>paxos-simpliy | 鱼的记忆</title>
 
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 
   
-    <meta name="keywords" content="技术,分布式理论,distributed,gossip,failure-detect,">
+    <meta name="keywords" content="技术,分布式理论,distributed,consensus,paxos,">
   
 
   <script>
@@ -189,12 +189,12 @@
 
 <div class="post">
   <h1 class="article-title">
-    <span>gossip-protocol</span>
+    <span>paxos-simpliy</span>
   </h1>
   <div class="article-top-meta">
     <span>
       发布 : 
-      2019-04-21
+      2019-05-02
     </span>
     
       <span>
@@ -211,65 +211,103 @@
 
   <div class="article-content">
     <div class="markdown-body">
-      <p>Gossip协议是一个在大规模分布式系统中被广泛使用的信息交换协议，用于解决应用层的多播问题。</p>
-<p>最近在学习Cousera上的Cloud-Computing-Concepts课程，里面布置了一套基于Gossip的成员协议的编程题，花了一天时间写完代码与调试，记录一下读后感与体会。</p>
-<h2 id="Gossip-理论"><a href="#Gossip-理论" class="headerlink" title="Gossip 理论"></a>Gossip 理论</h2><p>如何在一个大规模分布系统中高效传播一个信息？</p>
-<p>最简单的办法是向集群中的每个节点发送一条消息，但是随着系统规模的增大，考虑到网络的丢包与延迟以及防火墙之类的特殊构造，这个方法不能确保每个节点都能得到最新消息，源节点的传播耗时与网络负载也过高。</p>
-<p>另一个做法是维护一个树状网络拓扑图，每个节点向它的子节点传播信息，并且通过ACK/NACK确认消息，这个方案降低了节点的耗时与负载，但是为了处理节点失败的场景，需要对网络拓扑做非常复杂的维护。</p>
-<p>还有一个办法，那就是每个节点随机选择b个其他节点进行信息交换，最终这个消息就传播到了整个网络！这就是Gossip协议，它就像现实生活中的谣言一般，一传十，十传百，最后全世界都知道了。</p>
-<h2 id="Gossip-实现"><a href="#Gossip-实现" class="headerlink" title="Gossip 实现"></a>Gossip 实现</h2><p>Gossip协议有三种工作方式：Push，Pull 以及 Push/Pull混合。</p>
-<p>Push方式：</p>
+      <h2 id="Paxos-Made-Simple-读后感"><a href="#Paxos-Made-Simple-读后感" class="headerlink" title="Paxos Made Simple 读后感"></a>Paxos Made Simple 读后感</h2><p>近来在Cousera上学习 <a href="https://www.coursera.org/specializations/cloud-computing" target="_blank" rel="noopener">Cloud Computing Concept Part 1</a>，其中涉及到了对Paxos算法的介绍。Paxos算法固然是比较难懂的，但是幸好有简化版论文 <a href="http://www.cs.utexas.edu/users/lorenzo/corsi/cs380d/past/03F/notes/paxos-simple.pdf?spm=a2c4e.11153940.blogcont85470.8.76e44d9eRGbB30&amp;file=paxos-simple.pdf" target="_blank" rel="noopener">Paxos Made Simple</a>，相对好理解很多，分享一下自己的理解。</p>
+<h2 id="Paxos算法的问题背景"><a href="#Paxos算法的问题背景" class="headerlink" title="Paxos算法的问题背景"></a>Paxos算法的问题背景</h2><p>分布式系统进程模型：多个分布式进程节点，彼此只能通过网络消息通信；整个系统是异步的，时钟可能不同步，时间流速也可能不同，消息可能丢失，乱序到达，也可能无限延迟，任一进程可能失败退出（但是至少超过半数节点存活并可以互相通信）。</p>
+<p>分布式一致性问题：分布式系统中每个进程都有一个变量y，最初处于为未初始化状态，一旦变量y的值被确定，就不允许被修改；经过有限步骤，使得所有活着的进程都确定同一个y值，这就是一致性问题</p>
+<h2 id="简单说明"><a href="#简单说明" class="headerlink" title="简单说明"></a>简单说明</h2><p><img src="/images/paxos-simple-normal-case.png" alt="paxos-simple-normal-case"></p>
 <ol>
-<li>某个节点x随机选择b个其他节点作为目标</li>
-<li>x向每个目标节点传输消息</li>
-<li>其他节点收到消息后，根据消息的时效性更新本地消息</li>
+<li>Paxos 算法可以简单分为两个阶段，Prepare和Accept, 分别用于收集选票和提案</li>
+<li>有两种进程角色（Proposer和Acceptor，简称P和A），P在收集到足够多选票的情况下发起提案，A则负责投票和接受提案</li>
 </ol>
-<p>Pull方式：</p>
-<ol>
-<li>某个节点x随机选择b个其他节点作为目标，向每个目标节点询问最新消息</li>
-<li>目标节点向x返回最新消息</li>
-<li>x收到回复后，根据消息的时效性更新本地消息</li>
-</ol>
-<p>这两种方式可以用如下简图表示：</p>
-<p><img src="/images/gossip-disseminate.png" alt="gossip传播"></p>
-<h2 id="基于Gossip-协议的成员协议"><a href="#基于Gossip-协议的成员协议" class="headerlink" title="基于Gossip 协议的成员协议"></a>基于Gossip 协议的成员协议</h2><p>这是Cousera课程上的一道编程作业题：<a href="https://www.coursera.org/learn/cloud-computing/programming/O4lWE/gossip-protocol" target="_blank" rel="noopener">membership-protocol</a>，作业源码参见：<a href="https://github.com/YEXINGZHE54/coursera-cloud-computing/tree/master/gossip_protocol" target="_blank" rel="noopener">成员协议作业</a></p>
-<p>这个成员协议的实现不需要考虑网络传输层，并且提供一个入口函数：nodeStart，用于将节点加入成员组，成员组中的每个成员都运行着相同的协议。为了简单起见，我实现的Gossip协议是Push方式，成员协议主要分为如下几个部分：</p>
-<ol>
-<li>Gossip：定期心跳与状态推送</li>
-<li>Gossip：消息更新</li>
-<li>清理节点</li>
-<li>RPC消息的编解码器</li>
-</ol>
-<p>流程简图如下：</p>
-<p><img src="/images/gossip-membership-push-detail.png" alt="成员协议流程图"></p>
-<h3 id="协议状态与术语"><a href="#协议状态与术语" class="headerlink" title="协议状态与术语"></a>协议状态与术语</h3><p>每个节点在本地都维护如下信息：</p>
-<ol>
-<li>当前心跳计数（自增）</li>
-<li>集群成员列表（心跳计数器与上一次更新的本地时间）</li>
-</ol>
-<p>健康节点：心跳计数器的更新时间与本地时间相差不超过某个常量TF（Time of Failure）</p>
-<p>可移除节点：心跳计数器的更新时间与本地时间相差超过某个常量TC（Time of Cleanup）</p>
-<p>失败节点：心跳计数器的更新时间与本地时间相差超过某个常量TF，但是不超过常量TC</p>
-<h3 id="心跳与状态推送"><a href="#心跳与状态推送" class="headerlink" title="心跳与状态推送"></a>心跳与状态推送</h3><p>协议每隔一个单位时间周期T，都会执行一些定时任务，包括：心跳与状态推送。</p>
-<p>心跳指的是自增心跳计数器，并推送给目标节点。</p>
-<p>状态推送指的是协议会整理本地成员列表，将其中健康节点的信息推送给目标节点。</p>
-<p>通常心跳与状态信息都是一起推送的，减少发包次数。</p>
-<h3 id="消息更新"><a href="#消息更新" class="headerlink" title="消息更新"></a>消息更新</h3><p>节点收到消息后，将消息中包含的成员列表信息与本地成员列表进行比对，如果消息中成员的心跳计数大于本地成员的心跳，说明丢包了，更新本地成员的心跳计数和时间戳；如果消息中成员信息不在本地成员列表中，说明这是一个新加入的节点，将其加入本地成员列表并设置时间戳</p>
-<h3 id="清理节点"><a href="#清理节点" class="headerlink" title="清理节点"></a>清理节点</h3><p>清理节点指的是移除成员列表中心跳计数器的更新时间与当前时间相差超过某个常量TC的节点，定期执行。</p>
-<h3 id="消息编解码"><a href="#消息编解码" class="headerlink" title="消息编解码"></a>消息编解码</h3><p>由于消息比较简单，只是简单的心跳+状态，因此编解码也相对简单，不需要特殊的格式。</p>
-<h3 id="Trick"><a href="#Trick" class="headerlink" title="Trick"></a>Trick</h3><p>这里面有一个Trick，TC与TF应该设置多大合适？</p>
-<p>一般TF指的是预计最大网络延迟，如果更新时间相差超过TF，心跳没有得到更新的原因很大可能是节点已经Fail了，而不是网络延迟。TC一般设置为3 * TF以上，推论如下：</p>
-<ol>
-<li>假设节点A在T0时刻收到节点B的心跳</li>
-<li>到T0+TF-1，恰巧，非常巧，A认为B仍然是健康的，A仍然将B的节点信息推送给第三个节点C</li>
-<li>到T0+TF时刻，A仍然没有收到B的心跳，A将B标记为Fail</li>
-<li>到T0+2*TF-1时刻，A的消息才恰好到达节点C，C更新B的心跳信息</li>
-<li>到T0+3*TF-1时刻，C才将B标记为Fail</li>
-<li>到T0+3*TF时刻，此时A将节点B移除才是安全的，因为此时考虑到网络延迟，集群中的所有成员（C）都知道节点B处于Fail状态，并且不会扩散它的心跳了。</li>
-</ol>
-<p>那么，如果TC小于3*TF，也就是如果在T0+3*TF时刻以前就删除节点B，会发生什么呢？由上述分析可知，直到T0+3*TF-1时刻，C才将B标记为Fail，在此之前C传播的消息中是有可能带有B节点的信息的！因此如果A过早将B节点移除，A后续收到C的消息以后又会重新将B节点加回成员列表，同样也会导致C将B节点移除以后，收到A的消息继续将B节点加回成员列表。这样就像乒乓球一样互相影响，使得失败节点B永远都无法被清除。</p>
-<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>Gossip 协议是一个分布式系统中应用比较广泛的协议，可以用于失败检测，动态负载均衡，弹性扩展等需要共享信息的地方都可以用到它。与此同时，Gossip协议也会传播大量的信息，因此实际应用过程中还是需要进行进一步的改进。</p>
-<p>本文链接 <a href="http://yexingzhe54.github.io/passages/gossip-protocol/">http://yexingzhe54.github.io/passages/gossip-protocol/</a> </p>
+<h3 id="Prepare阶段"><a href="#Prepare阶段" class="headerlink" title="Prepare阶段"></a>Prepare阶段</h3><p>P选定一个全新的序号n，发起一个Prepare请求；A收到Prepare请求，如果请求中的序号n大于过去收到的n，那么A需要记录最新n值，返回Promise信息，并附带最近一次Accept阶段接收的序号和值（如果没有则不需要）；P需要等待A返回的Promise信息，如果超过半数则进入下一阶段，否则可以尝试发起新一轮Paxos。</p>
+<h3 id="Accept阶段"><a href="#Accept阶段" class="headerlink" title="Accept阶段"></a>Accept阶段</h3><p>P从上一阶段Promise信息中找出序号最大的Accept值，并用它发起Accept请求，如果所有Promise都不包含Accept值，那么P可以自行选择一个值；A收到Accept请求，如果请求中的序号等于当前序号n则写入日志并返回OK；如果P收到超过半数OK，说明超过半数都接受了结果，否则可以尝试发起新一轮Paxos。</p>
+<h2 id="容错分析"><a href="#容错分析" class="headerlink" title="容错分析"></a>容错分析</h2><p>正常情况下：Prepare阶段全票通过，Accept阶段全部OK，这是最理想的情况，无须多言；Paxos 算法在复杂的分布式环境下依然有很好的容错性，这是我们需要学习的地方。</p>
+<p>要做容错分析，我们先整理一下分布式系统中可能遇到的错误：</p>
+<ul>
+<li>消息延迟：消息经过一段时间的延迟以后才送达</li>
+<li>消息重传：为了避免消息丢失而再次传递相同消息</li>
+<li>消息乱序：历史消息乱序到达，某种意义上是由于延迟/重传造成的</li>
+<li>消息丢失：由于网络分区，消息无法送达</li>
+<li>进程退出：由于某些外部因素，进程崩溃退出</li>
+<li>消息错误，存储错误或算法之外的步骤等：这类拜占庭问题不在我们的考虑范畴</li>
+</ul>
+<p>整体而言，错误可以分为两类：</p>
+<ul>
+<li>网络分区（丢失）：<strong>消息丢失</strong>属于网络分区的范畴，<strong>进程退出</strong>的直接结果就是消息丢失，因此也可以归于网络分区问题，如果网络延迟比较大的情况消息延迟就等同于丢失了，即使后续收到了也和消息重传等效，因此<strong>消息延迟</strong>也属于网络分区</li>
+<li>消息重传（重复）：<strong>消息延迟</strong>，<strong>消息乱序</strong>和<strong>消息重传</strong>也可以看作是等效的，都可以通过超时重传机制达成同样的效果</li>
+</ul>
+<p>因此，<strong>Paxos算法的容错性其实就是对消息丢失与重复的容错</strong></p>
+<h3 id="消息丢失"><a href="#消息丢失" class="headerlink" title="消息丢失"></a>消息丢失</h3><p>Paxos可以在网络分区的前提下仍然达成共识（至少有半数以上节点存活且属于同一分区），并且共识一旦达成就不再改变，非常安全，非常适合做事务性协议基础。简单而言，Paxos在任何阶段如果超过半数消息丢失，都是直接发起新一轮Paxos。接下来，详细列出不同阶段对消息丢失的处理原因。</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>消息丢失场景</th>
+<th>处理方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prepare请求</td>
+<td>P当前所处分区可能是<strong>少数派</strong>，没有足够多A可以接收到该请求，见图(a)</td>
+<td>P无法得到足够多的选票，随机等待一段时间，开始下一轮Paxos即可。如果P一直处于<strong>少数派</strong>，那么它将永远无法获得足够多的选票，永远停留在这个Prepare阶段</td>
+</tr>
+<tr>
+<td>Promise接收</td>
+<td>Prepare请求被大多数节点都收到了，但是只收到了少数Promise消息，这个情况意味着网络分区发生了变化，P从<strong>多数派</strong>分区变成<strong>少数派</strong>分区，见图(b)</td>
+<td>P无法得到足够多的选票，需要开启下一轮Paxos</td>
+</tr>
+<tr>
+<td>Accept请求</td>
+<td>P所在分区属于<strong>少数派</strong>，没有足够的A可以收到Accept请求，与图(a)类似，就不再单独出图</td>
+<td>P无法得到足够多的OK响应，那么P需要重新发起新一轮Paxos</td>
+</tr>
+<tr>
+<td>OK响应</td>
+<td>已经有超过半数的节点接受了Accept请求，但是P所在分区变成了<strong>少数派</strong>，OK响应丢失，见图(c)</td>
+<td>在Paxos的设计中，只要超过半数的节点接受了Accept请求，那么事实上就已经达成了<strong>实质性的共识</strong>。Paxos不需要仰赖OK消息的稳定性，即使这些OK响应都丢失了，即使P没有收到OK响应，也没有关系，它仍然可以确保未来每一轮Paxos都会使用这个<strong>实质性共识</strong>里的值。</td>
+</tr>
+</tbody>
+</table>
+<p>那么更具体而言，如果所有OK响应丢失了，Paxos是如何确保共识的值不会再被新的值覆盖呢？它的安全性如何得到保障？请注意，Promise响应除了有选票的作用外，还附带了最近一次Accept的值的信息。因此，即使OK响应丢失了，下一轮Paxos发起的时候，P仍然可以通过Promise消息得到上一轮被Accept的值，P会继续使用这个值发起Accept请求，而不是其他值。因此，通过重试和Promise机制，解决了消息丢失导致的共识覆盖问题。</p>
+<p><img src="/images/paxos-simple-message-drop.png" alt="paxos-simple-message-drop"></p>
+<h3 id="消息重复"><a href="#消息重复" class="headerlink" title="消息重复"></a>消息重复</h3><p>对于重复或者迟到的消息，也会对一致性共识造成一定干扰，Paxos对此也有防御措施：Paxos中的进程都会记录一个n值，代表了当前Paxos的轮次序号。如果消息中的n值小于进程里的n值，这个消息会被认为是重复/延迟/乱序到达的消息，因此会被忽略。接下来，具体列出不同阶段对消息重复的处理</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>消息重复场景</th>
+<th>处理方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prepare请求</td>
+<td>Prepare消息的重传/延迟/乱序，或者另一个P正好也使用这个序号n,见图(d)</td>
+<td>如果A接收到的Prepare消息里的n值小于等于A存储的n值，那么A会忽略或拒绝它。在P看来这种处理方式就是发生了网络分区，但是不影响A的处理方式</td>
+</tr>
+<tr>
+<td>Promise接收</td>
+<td></td>
+<td>响应内容的重复可以忽略</td>
+</tr>
+<tr>
+<td>Accept请求</td>
+<td>Accept消息的重传/延迟/乱序，或者另一个P发起了更高序号的Prepare请求,见图(e)</td>
+<td>如果Accept请求里的n值小于A存储的n值，那么A会拒绝这个请求。对于第二种情况，两个P分别处于Prepare/Accept阶段轮转，他们会互相干扰，导致Acceptor在不断更新n值，不断拒绝Accept请求，导致无法达成最终的共识，这也是所谓的<strong>活锁</strong>问题。活锁问题可以用选主加随机的方式解决</td>
+</tr>
+<tr>
+<td>OK响应</td>
+<td></td>
+<td>响应内容的重复可以忽略</td>
+</tr>
+</tbody>
+</table>
+<p><img src="/images/paxos-simple-live-lock.png" alt="paxos-simple-live-lock"></p>
+<h2 id="相关文献"><a href="#相关文献" class="headerlink" title="相关文献"></a>相关文献</h2><ul>
+<li><a href="http://www.cs.utexas.edu/users/lorenzo/corsi/cs380d/past/03F/notes/paxos-simple.pdf?spm=a2c4e.11153940.blogcont85470.8.76e44d9eRGbB30&amp;file=paxos-simple.pdf" target="_blank" rel="noopener">http://www.cs.utexas.edu/users/lorenzo/corsi/cs380d/past/03F/notes/paxos-simple.pdf?spm=a2c4e.11153940.blogcont85470.8.76e44d9eRGbB30&amp;file=paxos-simple.pdf</a></li>
+</ul>
+<p>本文链接 <a href="http://yexingzhe54.github.io/passages/paxos-simpliy/">http://yexingzhe54.github.io/passages/paxos-simpliy/</a> </p>
 
     </div>
   </div>
@@ -281,7 +319,7 @@
         
           本文作者 : 比特鱼 <br>
         
-        原文链接 : <a href>http://yexingzhe54.github.io/passages/gossip-protocol/</a><br>
+        原文链接 : <a href>http://yexingzhe54.github.io/passages/paxos-simpliy/</a><br>
         版权声明 : 本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议。转载请注明出处！
         </blockquote>
       </div>
@@ -347,14 +385,14 @@
           </span>
           
           <span class="span--tag">
-            <a href="/tags/gossip/">
-              #gossip
+            <a href="/tags/consensus/">
+              #consensus
             </a>
           </span>
           
           <span class="span--tag">
-            <a href="/tags/failure-detect/">
-              #failure-detect
+            <a href="/tags/paxos/">
+              #paxos
             </a>
           </span>
           
@@ -379,15 +417,9 @@
       <div class="nav-pre">
         <i class="iconfont icon-prev"></i>
         上一篇:
-        <a href="/passages/golang-http-client-time-wait/" target="_self">golang-http-client-time-wait</a>
+        <a href="/passages/gossip-protocol/" target="_self">gossip-protocol</a>
       </div>
     
-    
-      <div class="nav-next">
-        下一篇:
-        <a href="/passages/paxos-simpliy/" target="_self">paxos-simpliy</a>
-        <i class="iconfont icon-next"></i>
-      </div>
     
   </nav>
 

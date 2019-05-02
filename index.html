@@ -179,6 +179,86 @@
   
   <div class="post">
     <h1 class="article-title">
+      <a href="/passages/paxos-simpliy/">
+        <span>paxos-simpliy</span>
+      </a>
+    </h1>
+    <!-- PC端文章信息 -->
+    <div class="article-top-meta pc-view">
+      <span>
+        发布时间 : 2019-05-02
+      </span>
+    </div>
+    <!-- 移动端文章信息 -->
+    <div class="article-top-meta mobile-view">
+      <span>
+        发布 : 2019-05-02
+      </span>
+      
+        <span>
+        分类 :
+          <a href="/categories/技术/">
+            技术
+          </a>
+        </span>
+      
+      
+    </div>
+    
+    <!-- 文章简介 -->
+    <div class="article-content">
+      <div class="markdown-body article-content--inner" v-html="mdToHtml(psg.summary)">
+        Paxos Made Simple 读后感
+近来在Cousera上学习 Cloud Computing Concept Part 1，其中涉及到了对Paxos算法的介绍。Paxos算法固然是比较难懂的，但是幸好有简化版论文 Paxos Made Simple，相对好理解很多，分享一下自己的理解。
+
+Paxos算法的问题背景
+分布式系统进程模型：多个分布式进程节点，彼此只能通过网络消息通信；整个系统是异步的，时钟可能不同步，时间流速也可能不同，消息可能丢失，乱序到达，也可能无限延迟，任一进程可能失败退出（但是至少超过半数节点存活并可以互相通信）。
+
+分布式一致性问题：分布式系统中每个进程都有一个
+      </div>
+    </div>
+    <div class="article-footer">
+      <div class="article-meta pull-left">
+        <!-- 分类pc端可见 -->
+        <span class="pc-view">
+          
+            <i class="iconfont icon-tag"></i>分类:
+            <a href="/categories/技术/">
+              技术
+            </a>
+          </span>
+          
+        <span>
+          
+            <i class="iconfont icon-06tags"></i>标签:
+            
+              <span class="span--tag">
+                <a href="/tags/distributed/">
+                  #distributed
+                </a>
+              </span>
+            
+              <span class="span--tag">
+                <a href="/tags/consensus/">
+                  #consensus
+                </a>
+              </span>
+            
+              <span class="span--tag">
+                <a href="/tags/paxos/">
+                  #paxos
+                </a>
+              </span>
+            
+                    
+        </span>
+      </div>
+      
+    </div>
+  </div>
+  
+  <div class="post">
+    <h1 class="article-title">
       <a href="/passages/gossip-protocol/">
         <span>gossip-protocol</span>
       </a>

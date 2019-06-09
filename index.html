@@ -188,6 +188,88 @@ var _hmt = _hmt || [];
   
   <div class="post">
     <h1 class="article-title">
+      <a href="/passages/arthas-first-parctice/">
+        <span>arthas-first-parctice</span>
+      </a>
+    </h1>
+    <!-- PC端文章信息 -->
+    <div class="article-top-meta pc-view">
+      <span>
+        发布时间 : 2019-06-09
+      </span>
+    </div>
+    <!-- 移动端文章信息 -->
+    <div class="article-top-meta mobile-view">
+      <span>
+        发布 : 2019-06-09
+      </span>
+      
+        <span>
+        分类 :
+          <a href="/categories/技术/">
+            技术
+          </a>
+        </span>
+      
+      
+    </div>
+    
+    <!-- 文章简介 -->
+    <div class="article-content">
+      <div class="markdown-body article-content--inner" v-html="mdToHtml(psg.summary)">
+        Arthas 在线诊断初体验
+Arthas 是一款阿里出品的Java诊断工具，可以实时监控JVM状态，灵活地线上Debug，具体可以看看它的教程。
+
+虽然功能很强大，但是这次需要排查的问题比较简单，使用watch命令就简单搞定了。
+
+工具还是要以实用为主，简单高效才是优雅。
+
+问题背景
+我们组开发了一个基于Hadoop生态的数据管理平台，简称X，但是在测试环境中回归测试的时候发现一个很诡异的现象：凡是涉及到Hadoop交互的接口全部都失败，而且报错信息为GSS Init failed，一种很典型的Kerberos登录异常。然而，与此形成鲜明对照的是：我开发的另一个监控工具，定时检查Kerber
+      </div>
+    </div>
+    <div class="article-footer">
+      <div class="article-meta pull-left">
+        <!-- 分类pc端可见 -->
+        <span class="pc-view">
+          
+            <i class="iconfont icon-tag"></i>分类:
+            <a href="/categories/技术/">
+              技术
+            </a>
+          </span>
+          
+        <span>
+          
+            <i class="iconfont icon-06tags"></i>标签:
+            
+              <span class="span--tag">
+                <a href="/tags/Java/">
+                  #Java
+                </a>
+              </span>
+            
+              <span class="span--tag">
+                <a href="/tags/Debug/">
+                  #Debug
+                </a>
+              </span>
+            
+              <span class="span--tag">
+                <a href="/tags/Arthas/">
+                  #Arthas
+                </a>
+              </span>
+            
+                    
+        </span>
+      </div>
+      
+    </div>
+  </div>
+  
+  <div class="post">
+    <h1 class="article-title">
       <a href="/passages/coursera-cloud-computing-specialization/">
         <span>coursera-cloud-computing-specialization</span>
       </a>
@@ -615,6 +697,12 @@ Alibaba/Druid 是一个广受欢迎的开源数据库连接池组件。但是，
               </span>
             
               <span class="span--tag">
+                <a href="/tags/Debug/">
+                  #Debug
+                </a>
+              </span>
+            
+              <span class="span--tag">
                 <a href="/tags/Druid/">
                   #Druid
                 </a>
@@ -623,12 +711,6 @@ Alibaba/Druid 是一个广受欢迎的开源数据库连接池组件。但是，
               <span class="span--tag">
                 <a href="/tags/Block/">
                   #Block
-                </a>
-              </span>
-            
-              <span class="span--tag">
-                <a href="/tags/Debug/">
-                  #Debug
                 </a>
               </span>
             

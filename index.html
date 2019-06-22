@@ -188,6 +188,82 @@ var _hmt = _hmt || [];
   
   <div class="post">
     <h1 class="article-title">
+      <a href="/passages/redis-cluster-specification/">
+        <span>redis-cluster-specification</span>
+      </a>
+    </h1>
+    <!-- PC端文章信息 -->
+    <div class="article-top-meta pc-view">
+      <span>
+        发布时间 : 2019-06-21
+      </span>
+    </div>
+    <!-- 移动端文章信息 -->
+    <div class="article-top-meta mobile-view">
+      <span>
+        发布 : 2019-06-21
+      </span>
+      
+        <span>
+        分类 :
+          <a href="/categories/技术/">
+            技术
+          </a>
+        </span>
+      
+      
+    </div>
+    
+    <!-- 文章简介 -->
+    <div class="article-content">
+      <div class="markdown-body article-content--inner" v-html="mdToHtml(psg.summary)">
+        Redis集群规范（译）
+欢迎来到Redis集群规范。在这里，你可以了解到Redis集群的算法和设计原理。这篇文档还在持续改进过程中，与Redis集群的具体实现保持一致。
+
+主要目标与设计原理
+Redis集群设计目标
+Redis集群是Redis的分布式实现，主要有如下几个目标，按照重要性依次排列：
+
+ * 高性能以及线性扩展到1000个节点。不使用代理，主从间采用异步复制，并且不支持冲突值的合并操作。
+ * 可接受程度的写安全性：当（发生网络分区）客户端可以与系统多数派主节点保持联系时，系统会（尽最大努力）尝试保留来自客户端的所有写数据。通常情况下，可能会有一个小窗口时间内的写数据会丢失。当节
+      </div>
+    </div>
+    <div class="article-footer">
+      <div class="article-meta pull-left">
+        <!-- 分类pc端可见 -->
+        <span class="pc-view">
+          
+            <i class="iconfont icon-tag"></i>分类:
+            <a href="/categories/技术/">
+              技术
+            </a>
+          </span>
+          
+        <span>
+          
+            <i class="iconfont icon-06tags"></i>标签:
+            
+              <span class="span--tag">
+                <a href="/tags/redis/">
+                  #redis
+                </a>
+              </span>
+            
+              <span class="span--tag">
+                <a href="/tags/distribution/">
+                  #distribution
+                </a>
+              </span>
+            
+                    
+        </span>
+      </div>
+      
+    </div>
+  </div>
+  
+  <div class="post">
+    <h1 class="article-title">
       <a href="/passages/arthas-first-parctice/">
         <span>arthas-first-parctice</span>
       </a>

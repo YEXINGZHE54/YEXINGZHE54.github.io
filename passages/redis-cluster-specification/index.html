@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+  
+<head><meta name="generator" content="Hexo 3.8.0">
+  <meta charset="utf-8">
+  <meta name="author" content="董沅鑫, yuanxin.me@gmail.com">
+  
+  
+  
+  <title>redis-cluster-specification | 鱼的记忆</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+  
+    <meta name="keywords" content="技术,分布式理论,redis,distribution,">
+  
+
+  <script>
+    console.log('\n%c Hexo-theme-bmw v4.0 ' + '%c 🎉 https://github.com/dongyuanxin/theme-bmw 🎉\n' + '\n%c View demo online ' + '%c 🔍 https://godbmw.com/ 🔍  \n' , 'color: #fadfa3; background: #030307; padding:3px 0;', '', 'color: #fadfa3; background: #030307; padding:3px 0;', '');
+  </script>
+
+  
+    <meta name="description" content="一些速记与思考，避免知识的遗忘">
+  
+
+  
+
+  
+    <link rel="icon" href="/images/favicon.ico">
+    <link rel="apple-touch-icon" href="/images/touch-icon.png">
+  
+
+  <link href="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/icon/iconfont.css">
+<link rel="stylesheet" href="/css/github-markdown.css">
+<link rel="stylesheet" href="/css/highlight.css">
+
+  <script src="/js/util.js"></script>
+<script src="/js/valine.min.js"></script>
+
+  
+
+  
+    <link href="https://cdn.bootcss.com/aplayer/1.10.1/APlayer.min.css" rel="stylesheet">
+    <script src="https://cdn.bootcss.com/aplayer/1.10.1/APlayer.min.js" async></script>
+  
+
+  
+    <link href="https://cdn.bootcss.com/social-share.js/1.0.16/css/share.min.css" rel="stylesheet">
+  
+  
+  <script src="//cdn.bootcss.com/jquery/3.3.1/jquery.min.js" async></script>
+  
+  
+
+  <script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?817faf85f22b95af4412c999d42e90cd";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+  </script>
+</head>
+
+  <body>
+
+    
+
+    <div id="app">
+
+      <div class="header-wrap">
+  <header>
+    <div class="site-brand">
+      <div class="site-title">
+        <a href="/">鱼的记忆</a>
+      </div>
+    </div>
+    <nav class="site-navigation">
+      <ul class="nav-menu">
+      
+        <li class="nav-item" data-path="/">
+          
+            <a href="/" target="_self">
+              主页
+            </a>
+          
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          
+            <a href="/archives/" target="_self">
+              归档
+            </a>
+          
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          
+            <a href="/categories/" target="_self">
+              分类
+            </a>
+          
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          
+            <a href="/tags/" target="_self">
+              标签
+            </a>
+          
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          
+            <a href="/about/" target="_self">
+              关于
+            </a>
+          
+        </li>
+      
+        <li class="nav-item" data-path>
+          
+            <a href="javascript:void(0);" v-else>抓到我</a>
+            <ul class="nav-menu--dropdown">
+              
+                <li>
+                  <a href="https://github.com/YEXINGZHE54" target="_blank">
+                    Github
+                  </a>
+                </li>
+              
+                <li>
+                  <a href="https://www.zhihu.com/people/li-zhao-xing-97/activities" target="_blank">
+                    知乎
+                  </a>
+                </li>
+              
+            </ul>
+          
+        </li>
+      
+      </ul>
+    </nav>
+    <i class="iconfont icon-menu"></i>
+  </header>
+</div>
+
+<script>
+  let links = document.querySelectorAll('.nav-item');
+  for(let link of links){
+    let childrenLink = link.querySelector('ul');
+    link.addEventListener('mouseenter', () => {
+      if(childrenLink) {
+        childrenLink.className = "nav-menu--dropdown active";
+      }
+    })
+    link.addEventListener('mouseleave', () => {
+      if(childrenLink) {
+        childrenLink.className = "nav-menu--dropdown";
+      }
+    })
+  }
+  let rootRealPath = getRealPath(window.location.pathname, true);
+  for(let link of links) {
+    let linkPath = link.getAttribute("data-path");
+    if(linkPath && getRealPath(linkPath, true) === rootRealPath) {
+      link.className = "nav-item hover";
+    }
+  }
+
+  let iconMenu = document.querySelector("i.iconfont.icon-menu"),
+    iconMenuClicked = false;
+  let navDOM = document.querySelector("nav.site-navigation");
+  iconMenu.addEventListener("click", () => {
+    iconMenuClicked 
+      ? navDOM.className = "site-navigation active"
+      : navDOM.className = "site-navigation";
+    iconMenuClicked = !iconMenuClicked;
+  })
+</script>
+
+      
+
+
+
+
+
+
+
+
+<div class="container post-index">
+
+  
+
+<div class="post">
+  <h1 class="article-title">
+    <span>redis-cluster-specification</span>
+  </h1>
+  <div class="article-top-meta">
+    <span>
+      发布 : 
+      2019-06-21
+    </span>
+    
+      <span>
+        分类 : 
+          <a href="/categories/技术/">
+            技术
+          </a>
+      </span>
+    
+    
+  </div>
+
+  
+
+  <div class="article-content">
+    <div class="markdown-body">
+      <h1 id="Redis集群规范（译）"><a href="#Redis集群规范（译）" class="headerlink" title="Redis集群规范（译）"></a>Redis集群规范（译）</h1><p>欢迎来到<a href="https://redis.io/topics/cluster-spec" target="_blank" rel="noopener"><strong>Redis集群规范</strong></a>。在这里，你可以了解到Redis集群的算法和设计原理。这篇文档还在持续改进过程中，与Redis集群的具体实现保持一致。</p>
+<h2 id="主要目标与设计原理"><a href="#主要目标与设计原理" class="headerlink" title="主要目标与设计原理"></a>主要目标与设计原理</h2><h3 id="Redis集群设计目标"><a href="#Redis集群设计目标" class="headerlink" title="Redis集群设计目标"></a>Redis集群设计目标</h3><p>Redis集群是Redis的分布式实现，主要有如下几个目标，按照重要性依次排列：</p>
+<ul>
+<li>高性能以及线性扩展到1000个节点。不使用代理，主从间采用异步复制，并且不支持冲突值的合并操作。</li>
+<li>可接受程度的写安全性：当（发生网络分区）客户端可以与系统多数派主节点保持联系时，系统会（尽最大努力）尝试保留来自客户端的所有写数据。通常情况下，可能会有一个小窗口时间内的写数据会丢失。当节点处于少数派网络分区时，这个丢失数据的时间窗口会变得更大。</li>
+<li>可用性：当发生网络分区时，如果大多数主节点都可用，并且那些不可用的主节点都至少有一个可用的从节点，那么Redis集群仍然可以保持可用。而且通过<strong>从节点迁移</strong>命令，可以将具有多个从节点的主节点的从节点分配给没有从节点的主节点。</li>
+</ul>
+<p>本文档描述的内容在Redis3.0以及更高版本中实现。</p>
+<h3 id="实现的功能子集"><a href="#实现的功能子集" class="headerlink" title="实现的功能子集"></a>实现的功能子集</h3><p>Redis集群实现了单机版Redis的所有单键命令。那些复杂的支持操作多键操作的命令，比如像集合类型的并集或交集指令，也都可以被支持，只要这些键被映射到同一个节点。</p>
+<p>Redis集群还支持<strong>哈希标签</strong>的概念，用来强制指定键映射到相同节点。但是，在手动重分片过程中，多键操作的指令可能变得不可用，但是单键操作一直都是有效的。</p>
+<p>Redis集群不支持多个数据库空间，只有一个数据库空间：0。因此，也不支持SELECT指令。</p>
+<h3 id="Redis集群协议中的角色"><a href="#Redis集群协议中的角色" class="headerlink" title="Redis集群协议中的角色"></a>Redis集群协议中的角色</h3><p>在Redis集群中，服务端节点负责持有数据，以及保持集群状态，包括键与节点的映射关系。节点还可以自动发现其他节点，探测失败节点，以及在需要故障转移的时候推选主节点。</p>
+<p>为了完成这些集群功能，所有集群节点彼此间通过二进制协议在TCP连接上通信，称之为<strong>Redis集群总线</strong>。每个节点都和其他每个节点通过集群总线连接在一起。节点通过Gossip协议传播集群信息，用于发现新节点，探测节点的健康状况，以及在特殊情况下发送集群消息。集群总线同样还可以用来在集群内传播<strong>发布/订阅</strong>消息，以及编排由用户发起的手动故障转移（手动故障转移指由集群管理员直接发起的故障转移，而不是由集群失败探测器自动发起的）。</p>
+<p>由于集群节点不能代理转发客户端请求，客户端在接收到重定向错误-Moved 和 -ASK的时候，可以被重定向到其他节点。客户端理论上可以自由的发送请求给任意节点，然后被重定向到目标节点，所以客户端没有必要持久化集群状态。但是如果客户端可以合理的缓存键和节点的映射关系，可以在某种程度上提升性能。</p>
+<h3 id="写安全性"><a href="#写安全性" class="headerlink" title="写安全性"></a>写安全性</h3><p>Redis集群在节点间采用异步复制机制，并且隐式的采取<strong>最后故障恢复胜出</strong>的合并策略。这意味着最后一个选举胜出的节点数据集最终将会替代其他数据拷贝。在发生网络分区期间，有一个时间窗口可能会丢失写数据。但是，多数派集群的时间窗口和少数派时间窗口是非常不同的 。</p>
+<p>与少数派集群相比，多数派Redis集群会更努力尝试保留客户端的写数据。以下列举了一些故障期间导致多数派集群节点丢失写数据的场景：</p>
+<ol>
+<li><p>写操作发送给了主节点，主节点回复写成功给客户端，但是这个写操作可能无法通过异步复制传播到从节点。如果主节点在把写操作同步给从节点前就退出了，并且主节点在接下来的很长一段时间内都处于不可用状态，从节点被推举成为新的主节点，那么写操作可能就永远丢失了。通常很难观察到主节点突然间完全失败（导致丢失写数据的）现象，因为主节点通常同时回复给客户端（写操作成功）并回复给从节点（传播写操作）。但这确实是真实世界中可能会发生的故障模式。</p>
+</li>
+<li><p>另一个理论上可能的写丢失故障步骤如下：</p>
+<ul>
+<li>网络分区中主节点变得不可用</li>
+<li>通过故障转移机制，从节点选举胜出为主节点</li>
+<li>过了一段时间，原来的主节点从新变得可用</li>
+<li>在旧节点被转换成新主节点的从节点前，拥有过期路由关系的客户端可能会继续尝试写入旧的主节点。</li>
+</ul>
+<p>这第二种故障场景不大可能会发生。因为当一段时间内主节点无法与集群中的大多数主节点进行通信的时候，主节点将会拒绝写操作，并且当网络分区恢复以后，写操作将在一小段时间内继续被拒绝，这样可以确保旧节点可以接收到其他节点传递的集群状态变更（从而转换角色为从节点）。这个故障场景还要求客户端的路由关系没有得到更新。</p>
+<p>写往网络分区中少数派集群的写操作，会在更长时间窗口内丢失数据。例如，当发生网络分区时，如果少数派集群所在分区中有至少一个客户端和集群保持联系，那么Redis集群将会丢失数量可观的写操作，因为所有写往这些主节点的写操作都可能会丢失，如果这些主节点在被多数派集群故障转移了。</p>
+<p>具体来说，要想让一个主节点被故障转移，它必须在至少<strong>NODE_TIMEOUT</strong>时间内无法被多数派主节点访问。因此，如果网络分区在这段时间内得到了修复，那么就没有写操作会丢失。当网络分区持续时间超过了<strong>NODE_TIMEOUT</strong>，少数派集群的写操作可能会丢失。但是，少数派集群中的主节点在超过<strong>NODE_TIMEOUT</strong>时间都无法与多数派主节点通信的情况下会立刻拒绝写操作。因此，少数派主节点变得不可用以后，存在一个最大的时间窗口（可能丢失数据）。在那以后，没有写操作会被允许或者丢失。</p>
+</li>
+</ol>
+<h3 id="可用性"><a href="#可用性" class="headerlink" title="可用性"></a>可用性</h3><p>在少数派网络分区中，Redis集群是不可用的。在多数派分区中，假设至少有多数派主节点可用，并且那些不可用的主节点都有从节点的情况下，在经过<strong>NODE_TIMEOUT</strong>时间段额外加上几秒用于推举主节点并故障转移旧的主节点，Redis集群又可以重新变得可用（故障转移通常需要1到2秒）。</p>
+<p>这意味着，Redis集群设计上可以允许集群中少数节点的故障，但不适合那种发生大网络分区并继续保持可用性的应用场景。</p>
+<p>假设一个Redis集群中包含N个主节点，每个主节点有一个从节点。如果有一个节点被网络隔离开，那么多数派集群可以继续保持可用性，如果有两个节点被隔离开，我们有1-(1/(N<em>2-1))的概率继续保持可用性(在第一个节点离开的情况下，我们总共还有N\</em>2-1个节点，那么第二个离开的节点和第一个离开的节点恰好是主从关系的概率是1/(N*2-1))。</p>
+<p>举个例子，集群中有5个主节点和5个从节点，当有两个节点被网络分区隔离开的时候，集群有1/(5*2-1)=11.11%的概率不再可用。</p>
+<p>庆幸的是，Redis集群有一个<strong>从节点迁移</strong>机制，可以将从节点迁移到那些孤儿主节点，在现实场景中Redis集群的可用性得到了改善（孤儿主节点指没有从节点的主节点）。因此，每次发生故障事件，集群都会重新调整从节点布局，以期更好的度过下一次故障。</p>
+<h3 id="性能"><a href="#性能" class="headerlink" title="性能"></a>性能</h3><p>在Redis集群中节点不会代理转发请求到正确节点，但是它们会重定向客户端到正确节点覆盖特定的键空间。</p>
+<p>最终，客户端可以得知最新的集群信息，以及哪个节点负责处理哪些键。因此，在后续操作中客户端可以直接向正确的节点发送命令。</p>
+<p>由于采用了异步复制机制，主节点不会等待从节点的确认（除非客户端指定了WAIT命令）</p>
+<p>另外，由于多键操作指令被限制在操作同节点的键，数据从来不会在节点间移动，除非重分片的场景。</p>
+<p>普通指令的处理和单机版Redis的处理方式完全一样。这意味着，在N个主节点的Redis集群中，由于线性扩展，你可以预期达到N个单机版Redis性能的性能。与此同时，通常指令都是在一个往返中完成，因为客户端通常会保持与节点的长链接，因此延迟曲线图也和单机版Redis相同。</p>
+<p>提供非常高的性能与扩展性，同时保留弱但合理的数据安全与可用性，这就是Redis集群的主要设计目标。</p>
+<h3 id="为什么不允许冲突合并操作"><a href="#为什么不允许冲突合并操作" class="headerlink" title="为什么不允许冲突合并操作"></a>为什么不允许冲突合并操作</h3><p>Redis集群设计避免了多个节点间相同Key-Value的版本冲突，因为在Redis的数据模型中这不是很合理可取。在Redis中，Value通常非常大；在列表或者有序集合中存储上百万个元素，这是很常见的场景。而且，数据类型通常很复杂。传输并合并这些类型的值，会成为性能瓶颈，同时还需要在应用逻辑上增加不少的改进处理，需要更多内存来存储元信息，等等。</p>
+<p>这里并没有严格意义上的技术限制。CRDTs或者同步复制状态机可以处理类似于Redis的复杂数据类型。但是，这类系统的实际运行时表现并不像Redis集群。Redis集群的设计是用来完全覆盖单机版Redis的使用场景。</p>
+<h2 id="Redis集群主要概览"><a href="#Redis集群主要概览" class="headerlink" title="Redis集群主要概览"></a>Redis集群主要概览</h2><h3 id="键空间分布模型"><a href="#键空间分布模型" class="headerlink" title="键空间分布模型"></a>键空间分布模型</h3><p>键空间被分割成16384个虚拟槽，限制了集群的主节点个数上限为16384（但是实际建议最大节点个数在~1000级别）.</p>
+<p>每个主节点负责处理16384个哈希槽中的部分子集。如果没有发生集群重配置（比如，哈希槽从一个节点迁移到另一个节点），那么Redis集群就是稳定的。当集群处于稳定状态，哈希槽只会被一个主节点映射处理（当然，这个主节点可能会有一个或多个从节点，在发生故障或者网络分区期间替换主节点，也可以用于扩展读操作性能，如果数据过期是可以接受的 ）。</p>
+<p>映射键到哈希槽点基本算法如下（阅读下一节的哈希标签规则，作为此规则的补充）：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">HASH_SLOT = CRC16(key) mod <span class="number">16384</span></span><br></pre></td></tr></table></figure>
+<p>CRC16具体细则如下：</p>
+<ul>
+<li>名称：XMODEM（也称为ZMODEM，或者CRC-16/ACORN）</li>
+<li>宽度：16位</li>
+<li>多项式：1021（ 实际公式：x16 + x12 + x5 + 1)</li>
+<li>初始值：0000</li>
+<li>Reflect Input byte：否</li>
+<li>Reflect Output CRC：否</li>
+<li>输出CRC的异或运算常量：0000</li>
+<li>“123456789”的输出结果：31C3</li>
+</ul>
+<p>CRC16算法生成的16位结果中的14位被实际使用（这也是为什么上面公式中为什么要对16384取余）。</p>
+<p>在将不同类型的键空间均匀分布到16384个槽的测试中，CRC16表现的非常好。</p>
+<p>注意：我们使用的CRC16算法的参考实现，在本文档的附录A中给出。</p>
+<h3 id="键哈希标签"><a href="#键哈希标签" class="headerlink" title="键哈希标签"></a>键哈希标签</h3><p>除了上一节所述的哈希槽计算规则，还存在补充规则：<strong>哈希标签</strong>。哈希标签是一种用来确保多个键被分配到同一个哈希槽的方式，通常在Redis集群中需要多键操作的时候会被使用。</p>
+<p>为了能支持哈希标签，我们用一种稍微不同的方式来计算键的哈希槽。如果键包含”{…}”模式，那么只有在{ 和 }之间的字符串会被用来计算哈希槽。但是，考虑到有可能出现多个{或者}字符的情况，因此还需要遵守如下规则：</p>
+<ul>
+<li>如果键包含’{’字符</li>
+<li>并且在’{’字符的后面包含’}‘</li>
+<li>并且在第一次出现’{‘字符和第一次出现的’}’字符之间存在着一个或者多个字符</li>
+</ul>
+<p>如果符合上述条件，那么只有在第一次出现的’{‘字符和第一次出现的’}’字符之间的字符串会被用来计算哈希槽。</p>
+<p>举个例子：</p>
+<ul>
+<li>键{user1000}.following 和 键{user1000}.followers 将会被映射到相同哈希槽，因为只有中间的字符串”user1000”会被用来计算</li>
+<li>至于键foo{}{bar}，整个键都会被用来计算哈希，因为第一次出现的’{‘和’}’之间没有字符</li>
+<li>至于键foozap，中间字符串”{bar”会被用来计算哈希，因为它出现在第一次出现的’{‘字符和后面第一次出现的’}’字符之间</li>
+<li>如果是键foo{bar}{zap}，那么中间字符串“bar”会用来计算哈希，因为算法在遇到第一个合法或者非法的匹配{和}情况就会终止。</li>
+<li>由此可以推断，如果键是以{}开头的，那么可以确保整个键都会被用来计算哈希。这在使用二进制数据作为键的时候很有用</li>
+</ul>
+<p>加上哈希标签这个例外情况，以下是HASH_SLOT函数的完整实现。</p>
+<p>Ruby代码示例：</p>
+<figure class="highlight ruby"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">def</span> <span class="title">HASH_SLOT</span><span class="params">(key)</span></span></span><br><span class="line">    s = key.index <span class="string">"&#123;"</span></span><br><span class="line">    <span class="keyword">if</span> s</span><br><span class="line">        e = key.index <span class="string">"&#125;"</span>,s+<span class="number">1</span></span><br><span class="line">        <span class="keyword">if</span> e &amp;&amp; e != s+<span class="number">1</span></span><br><span class="line">            key = key[s+<span class="number">1</span>..e-<span class="number">1</span>]</span><br><span class="line">        <span class="keyword">end</span></span><br><span class="line">    <span class="keyword">end</span></span><br><span class="line">    crc16(key) % <span class="number">16384</span></span><br><span class="line"><span class="keyword">end</span></span><br></pre></td></tr></table></figure>
+<p>C代码示例：<br><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">unsigned</span> <span class="keyword">int</span> <span class="title">HASH_SLOT</span><span class="params">(<span class="keyword">char</span> *key, <span class="keyword">int</span> keylen)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">int</span> s, e; <span class="comment">/* start-end indexes of &#123; and &#125; */</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Search the first occurrence of '&#123;'. */</span></span><br><span class="line">    <span class="keyword">for</span> (s = <span class="number">0</span>; s &lt; keylen; s++)</span><br><span class="line">        <span class="keyword">if</span> (key[s] == <span class="string">'&#123;'</span>) <span class="keyword">break</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* No '&#123;' ? Hash the whole key. This is the base case. */</span></span><br><span class="line">    <span class="keyword">if</span> (s == keylen) <span class="keyword">return</span> crc16(key,keylen) &amp; <span class="number">16383</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* '&#123;' found? Check if we have the corresponding '&#125;'. */</span></span><br><span class="line">    <span class="keyword">for</span> (e = s+<span class="number">1</span>; e &lt; keylen; e++)</span><br><span class="line">        <span class="keyword">if</span> (key[e] == <span class="string">'&#125;'</span>) <span class="keyword">break</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* No '&#125;' or nothing between &#123;&#125; ? Hash the whole key. */</span></span><br><span class="line">    <span class="keyword">if</span> (e == keylen || e == s+<span class="number">1</span>) <span class="keyword">return</span> crc16(key,keylen) &amp; <span class="number">16383</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* If we are here there is both a &#123; and a &#125; on its right. Hash</span></span><br><span class="line"><span class="comment">     * what is in the middle between &#123; and &#125;. */</span></span><br><span class="line">    <span class="keyword">return</span> crc16(key+s+<span class="number">1</span>,e-s<span class="number">-1</span>) &amp; <span class="number">16383</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></p>
+<h3 id="集群节点属性"><a href="#集群节点属性" class="headerlink" title="集群节点属性"></a>集群节点属性</h3><p>每个节点都有一个在集群中唯一的名称。这个集群名称是160位随机数字的16十进制表示，在集群第一次启动的时候确定（通常是通过 /dev/urandom）。节点会将它的ID存储在它的配置文件中，并从此一直使用同一的ID，除非配置文件被系统管理员删除，或者通过<a href="https://redis.io/commands/cluster-reset" target="_blank" rel="noopener">CLUSTER RESET</a>指令重置。</p>
+<p>节点ID用来在集群中唯一标识节点。节点在不更改ID的情况下，可以更改它的IP信息。集群也可以通过在集群总线上运行的Gossip协议探测到节点的IP/端口变化与重配置。</p>
+<p>节点ID不仅仅是节点的关联信息，也是节点唯一一个在全局始终保持一致的属性。节点还有其他关联信息，其中包括该节点的集群配置信息，这个最终将会在全局达成一致，以及一些节点本地信息，例如最近一次Ping其他节点的时间。</p>
+<p>每个节点都维护着集群中其他节点的如下信息：节点ID，IP和端口，节点标志，该节点的主节点（如果是从节点），最近一次Ping的时间，与该节点连接状态，以及该节点负责处理的哈希槽映射。</p>
+<p>关于<a href="http://redis.io/commands/cluster-nodes" target="_blank" rel="noopener">节点字段</a>的细节描述在<a href="https://redis.io/commands/cluster-nodes" target="_blank" rel="noopener">CLUSTER NODES</a>中可以找到。</p>
+<p><a href="https://redis.io/commands/cluster-nodes" target="_blank" rel="noopener">CLUSTER NODES</a>命令可以发送给任意节点，从回复中可以从该节点的本地视角看到这个集群的状态以及集群中每个节点的信息。</p>
+<p>以下是一个发送给三节点小集群的主节点的<a href="https://redis.io/commands/cluster-nodes" target="_blank" rel="noopener">CLUSTER NODES</a>命令的样例输出。</p>
+<figure class="highlight ruby"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">$ redis-cli cluster nodes</span><br><span class="line">d1861060fe6a534d42d8a19aeb36600e18785e04 <span class="number">127.0</span>.<span class="number">0</span>.<span class="number">1</span><span class="symbol">:</span><span class="number">6379</span> myself - <span class="number">0</span> <span class="number">1318428930</span> <span class="number">1</span> connected <span class="number">0</span>-<span class="number">1364</span></span><br><span class="line"><span class="number">3886</span>e65cc906bfd9b1f7e7bde468726a052d1dae <span class="number">127.0</span>.<span class="number">0</span>.<span class="number">1</span><span class="symbol">:</span><span class="number">6380</span> master - <span class="number">1318428930</span> <span class="number">1318428931</span> <span class="number">2</span> connected <span class="number">1365</span>-<span class="number">2729</span></span><br><span class="line">d289c575dcbc4bdd2931585fd4339089e461a27d <span class="number">127.0</span>.<span class="number">0</span>.<span class="number">1</span><span class="symbol">:</span><span class="number">6381</span> master - <span class="number">1318428931</span> <span class="number">1318428931</span> <span class="number">3</span> connected <span class="number">2730</span>-<span class="number">4095</span></span><br></pre></td></tr></table></figure>
+<p>上面的例子中，按序列出了节点的属性信息：node id, address:port, flags, last ping sent, last pong received, configuration epoch, link state, slots。关于这些字段的细节，在我们讨论到Redis集群相关部分的时候会涉及。</p>
+<h3 id="集群总线"><a href="#集群总线" class="headerlink" title="集群总线"></a>集群总线</h3><p>每个节点都提供一个额外的TCP端口用来接受其他集群节点的连接。这个端口号和普通接受客户端连接的命令端口号相差固定偏移量，通常是10000.举个例子，如果节点在6379端口上为客户端提供服务，那么集群总线端口号16379也会被打开。</p>
+<p>点对点通信，专门使用集群总线和集群总线协议：一个定义了不同类型大小的数据帧的二进制协议。这个协议并没有公开在文档中，因为这个协议不是用来让外部设备与集群节点通信的。但是，你可以通过阅读Redis集群源码中的 cluster.h 和 cluster.c 获得更详细的细节。</p>
+<h3 id="集群拓扑"><a href="#集群拓扑" class="headerlink" title="集群拓扑"></a>集群拓扑</h3><p>Redis集群是一个完全连接的网格，每个节点都和其他每个节点通过一个TCP连接通信。</p>
+<p>在一个N节点集群中，每个节点有N-1个传出连接，N-1个传入连接。</p>
+<p>这些TCP连接始终保持长链接，并且不是在需要的时候才创建。当一个节点预期从集群总线中得到PING的PONG响应时，它不会一直等待下去直到节点被标记为不可达，而是通过从头创建新连接的方式刷新连接。</p>
+<p>虽然Redis集群中的节点形成了完全相连的网格，<strong>节点间通过Gossip协议和配置更新机制来避免在正常情况下节点间交换太多消息</strong>，因此消息数量不会是指数级。</p>
+<h3 id="节点握手"><a href="#节点握手" class="headerlink" title="节点握手"></a>节点握手</h3><p>节点总是会接受传入集群总线端口上的连接，甚至即使对端节点是不可信的，也会对PING消息作出响应。但是，如果对端节点不是集群成员，那么所有其他类型消息都会被节点丢弃。</p>
+<p>节点只有在如下两种情况下，才会将另一个节点接纳为集群成员：</p>
+<ul>
+<li>如果对端节点发送了 MEET 消息。MEET消息和PING消息类似，但是它会强制接收方接受发送方为集群成员。节点只有在系统管理员发送如下指令的情况下才会发送MEET消息给其他节点：</li>
+</ul>
+<p>CLUSTER MEET ip port</p>
+<ul>
+<li>如果一个可信赖节点通过Gossip协议”介绍”了新节点，那么这个新节点也可以被接纳为集群成员。举个例子，如果A知道B，B知道C，然后B通过Gossip协议将C介绍给A，那么A将会登记C为集群的一部分，并和C建立联系。</li>
+</ul>
+<p>这意味着，只要我们将两个子图中的节点相连，最终他们会自动形成完全相连的图。这意味着集群可以自动发现其他节点，但是需要系统管理员强制指定初始信任关系。</p>
+<p>这个机制使得集群鲁棒性更佳，避免了不同Redis集群在改变了IP地址或者其他网络变更以后被混淆在一起。</p>
+<h2 id="重定向与重分片"><a href="#重定向与重分片" class="headerlink" title="重定向与重分片"></a>重定向与重分片</h2><h3 id="MOVED-重定向"><a href="#MOVED-重定向" class="headerlink" title="MOVED 重定向"></a>MOVED 重定向</h3><p>客户端可以自由地向任意节点发送请求，包括从节点。节点会分析这个请求，如果它是可以接受的（也就是，单键操作或者映射到同一个哈希槽的多键操作），节点会查找这个键的哈希槽的服务节点。</p>
+<p>如果哈希槽由当前节点负责，那么会按照流程继续处理，否则节点会查找内部哈希槽映射表，返回给客户端一个MOVED错误，如下所示：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">GET x</span><br><span class="line">-MOVED <span class="number">3999</span> <span class="number">127.0</span><span class="number">.0</span><span class="number">.1</span>:<span class="number">6381</span></span><br></pre></td></tr></table></figure>
+<p>error信息中包含了哈希槽（3999）以及可以处理这个请求的节点的IP和端口信息。客户端需要向这个节点重新发起请求。假设客户端经过很长一段时间以后再发起请求，并且在此期间集群配置发生了变更，目标节点可能也会返回MOVED error，因为3999这个哈希槽可能正在由另一个节点提供服务。如果目标节点没有更新信息，类似的情况也会发生。</p>
+<p>所以，虽然集群节点是通过ID来唯一标识的，我们仍然尝试简化我们的客户端接口，只暴露哈希槽和节点IP端口对的映射关系。</p>
+<p>虽然不是必须的，客户端还是可以尝试记住哈希槽3999与节点127.0.0.1:6381的映射。这样一旦需要路由新的请求，客户端可以计算出键的哈希槽，并有更大的可能性选中正确的节点。</p>
+<p>一种替代方案是当客户端收到MOVED重定向的时候，通过<a href="https://redis.io/commands/cluster-nodes" target="_blank" rel="noopener">CLUSTER NODES</a>或者<a href="https://redis.io/commands/cluster-slots" target="_blank" rel="noopener">CLUSTER SLOTS</a>指令更新客户端的集群配置信息。因为在这种情况下，很可能多个哈希槽已经被重配置了，而不仅仅是一个哈希槽，所以尽快更新客户端的集群配置信息是最好的策略。当集群处于稳定状态（没有正在进行中的配置的变更），最终所有客户端都会获取到哈希槽与节点的映射关系，这样客户端可以直接与正确的节点通信，不需要重定向，代理，或者引入其他单点故障实体，使得集群变得高效。</p>
+<p>客户端<strong>必须要处理稍后介绍的ASK重定向</strong>，否则它不是一个完整实现了Redis集群协议的客户端。</p>
+<h3 id="集群在线重配置"><a href="#集群在线重配置" class="headerlink" title="集群在线重配置"></a>集群在线重配置</h3><p>Redis集群支持在运行过程中增加/移除节点。增删节点可以抽象为同一类操作：将哈希槽从一个节点迁移到另一个节点。这意味着，这个机制可以用来再平衡Redis集群，增删节点，等等。</p>
+<ul>
+<li>将一个全新节点加入集群，先添加一个空节点为集群成员，然后从别的节点迁移部分哈希槽到这个空节点就行</li>
+<li>移除一个节点，先将哈希槽指派给其他节点</li>
+<li>集群再平衡，可以通过在节点间迁移哈希槽的方式达成</li>
+</ul>
+<p>因此，关键在于支持节点间的哈希槽迁移能力。从实践角度来看，哈希槽只是键空间的子集，所以Redis集群在重分片期间所做的事情，就是逐个将键从实例挪到另一个实例上。迁移哈希槽，就意味着迁移所有属于这个哈希槽的键。</p>
+<p>为了解释这是如何工作的，我们先展示一下可以操中哈希槽映射表的CLUSTER子命令。</p>
+<p>如下子命令是可用的（排除掉其他在这个场景下用处不大的）：</p>
+<ul>
+<li><a href="https://redis.io/commands/cluster-addslots" target="_blank" rel="noopener">CLUSTER ADDSLOTS</a> slot1 [slot2] … [slotN]</li>
+<li><a href="https://redis.io/commands/cluster-delslots" target="_blank" rel="noopener">CLUSTER DELSLOTS</a> slot1 [slot2] … [slotN]</li>
+<li><a href="https://redis.io/commands/cluster-setslot" target="_blank" rel="noopener">CLUSTER SETSLOT</a> slot NODE node</li>
+<li><a href="https://redis.io/commands/cluster-setslot" target="_blank" rel="noopener">CLUSTER SETSLOT</a> slot MIGRATING node</li>
+<li><a href="https://redis.io/commands/cluster-setslot" target="_blank" rel="noopener">CLUSTER SETSLOT</a> slot IMPORTING node</li>
+</ul>
+<p>头两个子命令 <code>ADDSLOTS</code> 和 <code>DELSLOTS</code>, 用来指派/取消指派哈希槽给节点. 指派哈希槽意味着告诉这个主节点，它负责存储以及处理这个哈希槽的数据。</p>
+<p>哈希槽被指派以后，这个信息会通过Gossip协议传播到全集群，后文配置传播一节将涉及。</p>
+<p><code>ADDSLOTS</code> 通常用在全新集群初始化的时候给每个主节点分配分片。</p>
+<p><code>DELSLOTS</code> 通常用在手工调整集群配置或者调试任务，实际情况下它很少使用。</p>
+<p><code>SETSLOT</code> 通常用来指派哈希槽到特定节点，如果使用的是 <code>SETSLOT &lt;slot&gt; NODE</code> 格式.否则哈希槽可以被设置为两种特殊状态： <code>MIGRATING</code> 或者 <code>IMPORTING</code>。这两种特殊状态在迁移哈希槽的过程中会用到。</p>
+<ul>
+<li>当哈希槽被设置为MIGRATING状态, 节点仍然会继续接受这个哈希槽的请求，但是如果请求中的键不存在，节点将会返回-ASK，重定向客户端到MIGRATING的目标节点。</li>
+<li>当哈希槽被设置IMPORTING状态, 只有当客户端先发送ASKING命令之后，节点才会处理这个哈希槽的请求。如果没有ASKING，请求将会被MOVED重定向回这个哈希槽的真实处理节点，就像前文所述的普通处理流程。</li>
+</ul>
+<p>让我们通过一个例子来解释清楚。假设，我们有两个Redis主节点，A和B。我们希望将哈希槽8从A节点迁移到B节点，所以我们发起如下指令：</p>
+<ul>
+<li>发送给B：CLUSTER SETSLOT 8 IMPORTING A</li>
+<li>发送给A：CLUSTER SETSLOT 8 MIGRATING B</li>
+</ul>
+<p>这时候，其他节点如果收到属于哈希槽8的键请求，会将客户端MOVED重定向到节点A。这些请求会按照如下方式处理：</p>
+<ul>
+<li>如果键还在节点A上，那么由A继续处理</li>
+<li>如果键不在节点A上，那么请求会被ASK重定向到节点B</li>
+</ul>
+<p>这样，我们可以避免在A节点上创建新键。在此期间，一个叫做redis-trib的程序会被启动，Redis集群会将哈希槽8的键从A节点迁移到B节点。以下是迁移过程：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">CLUSTER GETKEYSINSLOT slot count</span><br></pre></td></tr></table></figure>
+<p>上述命令可以返回属于给定哈希槽的键列表。对于服务端回复的每个键，redis-trib会给A节点发送<a href="https://redis.io/commands/migrate" target="_blank" rel="noopener">MIGRATE</a> 指令，这个指令可以原子性地将一个键从节点A迁移到B(两个节点都会被锁定一小段时间以避免并发竞争）。如下是 <a href="https://redis.io/commands/migrate" target="_blank" rel="noopener">MIGRATE</a> 指令的原理:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">MIGRATE target_host target_port key target_database id timeout</span><br></pre></td></tr></table></figure>
+<p><a href="https://redis.io/commands/migrate" target="_blank" rel="noopener">MIGRATE</a> 会连接到目标节点，将键的序列化版本发送给对方，收到OK以后从本地数据库中移除键。从一个外部客户端的视角来看，此时这个键存在于A或者B两者之一。</p>
+<p>通常在Redis集群中不需要指定数据库，但是<a href="https://redis.io/commands/migrate" target="_blank" rel="noopener">MIGRATE</a> 是一个通用命令，可以用于其他任务，不仅仅是Redis集群。虽然 <a href="https://redis.io/commands/migrate" target="_blank" rel="noopener">MIGRATE</a> 指令专门优化过可以尽可能快地迁移复杂类型的键，但是如果应用层对数据库延迟敏感，那么在Rediscover集群中重新配置大键的存储位置可能不是一个明智的做法。 </p>
+<p>迁移过程最终完成以后， <code>SETSLOT &lt;slot&gt; NODE &lt;node-id&gt;</code> 指令会被发送到参与迁移过程的这两个节点上以确保它们的状态正确.此外，同样的命令还会发送到其他节点，以避免等待集群重配置过程才能获取到迁移变化信息。 </p>
+<h3 id="ASK-重定向"><a href="#ASK-重定向" class="headerlink" title="ASK 重定向"></a>ASK 重定向</h3><p>在前面章节我们简单提及了ASK重定向。为什么我们不能直接使用MOVED重定向？因为MOVED重定向代表了我们认为哈希槽已经永久迁移到了另一个节点，接下来的所有请求应该发送给那个节点。而ASK意味着临时重定向，只有下一次请求应该发送给其他节点。</p>
+<p>这是因为下一次关于哈希槽8的请求，所处理的键可能还在节点A上，因此我们希望客户端总是先尝试A，如果需要再尝试B。由于这种情况只会发生在16384个槽中的一个，因此对集群的性能影响是可以接受的。</p>
+<p>我们需要强制客户端遵守这个规则。为了避免客户端在从A被重定向到B以后只尝试B节点，当一个哈希槽被标记为IMPORTING状态时，节点B只会在收到客户端的ASKING命令以后才会接受这个哈希槽的请求。</p>
+<p>基本上ASKING命令会在客户端设置一个<strong>一次性</strong>标记，确保服务端会处理处于IMPORTING状态的哈希槽请求。</p>
+<p>从客户端的视角来看，ASK重定向的完整语义包括如下节点：</p>
+<ul>
+<li>如果收到了ASK重定向回复, 只能发送这个被重定向的请求到指定节点，其他请求需要继续发送到旧节点</li>
+<li>先发送ASKING指令再将请求发送到目标节点</li>
+<li>不能在本地映射表中，将哈希槽8指向节点B</li>
+</ul>
+<p>一旦哈希槽迁移完成, A 会回复给客户端MOVED，客户端此时可以永久性映射哈希槽8到新IP/端口。如果一个有缺陷的客户端提前做了映射，这也不会成为问题，因为它没有在发送请求前先发送ASKING指令，那么B节点会通过MOVED错误将其重定向回节点A。</p>
+<p>槽迁移在<a href="https://redis.io/commands/cluster-setslot" target="_blank" rel="noopener">CLUSTER SETSLOT</a>文档中也做了介绍，类似的概念但不同的术语。</p>
+<h3 id="客户端第一次连接和处理重定向"><a href="#客户端第一次连接和处理重定向" class="headerlink" title="客户端第一次连接和处理重定向"></a>客户端第一次连接和处理重定向</h3><p>假设有一种客户端实现，它不在内存中记录槽配置（槽与节点地址的映射），并且每次都随机选择一个节点并预期重定向到正确节点，这样的客户端实现将会非常低效。</p>
+<p>Redis集群的客户端应该足够聪明，可以记住槽配置信息。但是这个配置信息不需要是最新的。因为即使连接到错误的节点也会收到重定向回复，这会触发客户端的更新。</p>
+<p>在以下两种情况下，客户端需要获取哈希槽的完整列表并映射到节点地址：</p>
+<ul>
+<li>在启动时需要填充槽配置</li>
+<li>当收到 <code>MOVED</code> 重定向的时候</li>
+</ul>
+<p>由于客户端在收到MOVED重定向的时候，可能只会在映射表中更新重定向的条目。但是，通常这种做法不够高效，因为通常情况下多个槽的配置都发生了变更（比如说，如果一个从节点当选为主节点，那么旧节点的所有哈希槽都需要重新映射）。更简单的做法是重新获取一份槽与节点的完整映射。</p>
+<p>为了获取槽配置信息，Redis集群提供了 <a href="https://redis.io/commands/cluster-nodes" target="_blank" rel="noopener">CLUSTER NODES</a> 指令的替代品，不需要额外解析，并且仅提供客户端需要的有效信息。</p>
+<p>这个新指令叫做 <a href="https://redis.io/commands/cluster-slots" target="_blank" rel="noopener">CLUSTER SLOTS</a> ，提供槽范围数组以及负责处理槽范围的主从节点信息。</p>
+<p>如下是 <a href="https://redis.io/commands/cluster-slots" target="_blank" rel="noopener">CLUSTER SLOTS</a>命令的样例输出：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">127.0.0.1:7000&gt; cluster slots</span><br><span class="line">1) 1) (integer) 5461</span><br><span class="line">   2) (integer) 10922</span><br><span class="line">   3) 1) &quot;127.0.0.1&quot;</span><br><span class="line">      2) (integer) 7001</span><br><span class="line">   4) 1) &quot;127.0.0.1&quot;</span><br><span class="line">      2) (integer) 7004</span><br><span class="line">2) 1) (integer) 0</span><br><span class="line">   2) (integer) 5460</span><br><span class="line">   3) 1) &quot;127.0.0.1&quot;</span><br><span class="line">      2) (integer) 7000</span><br><span class="line">   4) 1) &quot;127.0.0.1&quot;</span><br><span class="line">      2) (integer) 7003</span><br><span class="line">3) 1) (integer) 10923</span><br><span class="line">   2) (integer) 16383</span><br><span class="line">   3) 1) &quot;127.0.0.1&quot;</span><br><span class="line">      2) (integer) 7002</span><br><span class="line">   4) 1) &quot;127.0.0.1&quot;</span><br><span class="line">      2) (integer) 7005</span><br></pre></td></tr></table></figure>
+<p>数组中每个元素的头两个子元素代表了槽范围的起始和终止。其他元素代表了地址-端口对信息。第一个地址-端口对是主节点，剩下的是健康的从节点（例如，没有被标记为FAIL）。</p>
+<p>例如，上述输出内容的第一个元素表明，从5461到10922范围的槽（起始和终止都包括）有主节点127.0.0.1:7001提供服务，并且可以通过连接从节点127.0.0.1:7004的方式扩展只读负载。</p>
+<p><a href="https://redis.io/commands/cluster-slots" target="_blank" rel="noopener">CLUSTER SLOTS</a> 指令不保证返回的结果会覆盖16384个槽，这在集群配置错误的情况下是有可能发生的。因此客户端在初始化配置的时候应该将目标节点填充为空对象，并且当用户命令操作的键属于未分配的哈希槽的时候应该报告错误。</p>
+<p>在发现槽没有分配到对应节点并返回错误之前，客户端应该尝试再次尝试获取槽配置信息，检查集群配置是否恢复正常。</p>
+<h3 id="多键操作"><a href="#多键操作" class="headerlink" title="多键操作"></a>多键操作</h3><p>通过哈希表中，客户端可以自由使用多键操作。例如，下列操作是合法的：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">MSET &#123;user:1000&#125;.name Angela &#123;user:1000&#125;.surname White</span><br></pre></td></tr></table></figure>
+<p>当哈希槽重分片的时候，属于这个哈希槽的多键操作可能变得不可用。</p>
+<p>更具体而言，即使在哈希槽重分片期间，只要这些键都存在而且都存储在同一个节点，那么多键操作还是可用的。</p>
+<p>在重分片期间，对于不存在的键或者分跨不同节点的多个键的指令会得到 <code>-TRYAGAIN</code> 错误。客户端可以在稍后一段时间再重试，或者回报错误。</p>
+<p>一旦哈希槽的迁移过程结束，与之相关的多键操作又会重新变回可用。</p>
+<h3 id="读扩展"><a href="#读扩展" class="headerlink" title="读扩展"></a>读扩展</h3><p>通常情况下，从节点会将客户端重定向到负责相关哈希槽的主节点，但是客户端可以通过 <a href="https://redis.io/commands/readonly" target="_blank" rel="noopener">READONLY</a> 指令利用从节点来扩展读性能。</p>
+<p><a href="https://redis.io/commands/readonly" target="_blank" rel="noopener">READONLY</a> 指令告诉从节点，客户端可以接受读到过期数据且不需要执行写操作。</p>
+<p>在连接处于只读模式的情况下，当从节点的主节点不负责处理请求涉及的键槽时，客户端会收到重定向错误。这可能是因为：</p>
+<ol>
+<li>客户端发送的请求中涉及到不被主节点负责的键槽</li>
+<li>集群配置发生了变化（比如重分片），那么从节点再也不能为这个哈希槽提供服务</li>
+</ol>
+<p>当这些情况发生时，客户端应该像前面几节中提到的调整本地哈希槽映射。</p>
+<p>连接的只读状态可以通过 <a href="https://redis.io/commands/readwrite" target="_blank" rel="noopener">READWRITE</a> 指令清除。</p>
+<h2 id="容错"><a href="#容错" class="headerlink" title="容错"></a>容错</h2><p>待续</p>
+<p>本文链接 <a href="http://yexingzhe54.github.io/passages/redis-cluster-specification/">http://yexingzhe54.github.io/passages/redis-cluster-specification/</a> </p>
+
+    </div>
+  </div>
+  
+    <div class="copy-right">
+      <div class="markdown-body">
+        <blockquote>
+        
+        
+          本文作者 : 比特鱼 <br>
+        
+        原文链接 : <a href>http://yexingzhe54.github.io/passages/redis-cluster-specification/</a><br>
+        版权声明 : 本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议。转载请注明出处！
+        </blockquote>
+      </div>
+    </div>
+  
+  
+  
+    <div class="social-share" style="margin-top: -2rem" data-wechat-qrcode-title="<p>微信扫一扫</p>" data-wechat-qrcode-helper="<p>微信右上角, 扫一扫分享</p>" data-sites="qzone, qq, weibo, wechat, douban, google, facebook, twitter">
+  <span style="color: #6b7487; font-size: 1.4rem;">分享到: </span>
+</div>
+<script src="https://cdn.bootcss.com/social-share.js/1.0.16/js/social-share.min.js" async></script>
+  
+
+  
+    <div id="reward">
+  
+    <p id="reward-meta">知识 & 情怀 | 二者兼得</p>
+  
+  <button id="reward-btn">
+    
+    <span>投食</span>
+  </button>
+  <div id="reward-qrcode">
+    
+      <div class="reward-qrcode--container">
+        <img class="qrcode-img" src="/images/wechat.png" alt="微信扫一扫, 向我投食">
+        <p class="qrcode-meta">微信扫一扫, 向我投食</p>
+      </div>
+    
+      <div class="reward-qrcode--container">
+        <img class="qrcode-img" src="/images/alipay.png" alt="支付宝扫一扫, 向我投食">
+        <p class="qrcode-meta">支付宝扫一扫, 向我投食</p>
+      </div>
+    
+  </div>
+
+</div>
+
+<script>
+  (() => {
+    let button = document.querySelector('#reward-btn'),
+      qrcode = document.querySelector('#reward-qrcode'),
+      display = false;
+    
+    button.addEventListener('click', () => {
+      qrcode.style.display = display ? 'none' : 'block'
+      display = !display
+    }, false)
+  })()
+</script>
+  
+
+  <div class="article-footer">
+    <div class="article-meta pull-left">
+      <span>
+        
+          <i class="iconfont icon-06tags"></i>标签: 
+          
+          <span class="span--tag">
+            <a href="/tags/redis/">
+              #redis
+            </a>
+          </span>
+          
+          <span class="span--tag">
+            <a href="/tags/distribution/">
+              #distribution
+            </a>
+          </span>
+          
+        
+      </span>
+    </div>
+    <div class="article-meta pull-right">
+    </div>
+  </div>
+</div>
+
+
+  <aside id="sidebar">
+    <p id="sidebar-header"></p>
+    <ol id="sidebar-toc"></ol>
+  </aside>
+  <script async>setTimeout(generateToc, 10);</script>
+
+
+  <nav class="post-navigation">
+    
+      <div class="nav-pre">
+        <i class="iconfont icon-prev"></i>
+        上一篇:
+        <a href="/passages/arthas-first-parctice/" target="_self">arthas-first-parctice</a>
+      </div>
+    
+    
+  </nav>
+
+   
+
+   
+
+</div>
+
+
+      <footer>
+  <p class="site-info">
+    博客已萌萌哒运行<span id="time-to-now"></span><span class="my-face">(●'◡'●)ﾉ♥</span>
+    <br>
+    Theme - <a href="https://github.com/dongyuanxin/theme-bmw">BMW</a> | Made With 💗 | Powered by <a href="https://godbmw.com/">GodBMW</a>
+    <br>
+    
+  </p>
+</footer>
+
+
+
+<script>
+const timeToNowDOM = document.querySelector("#time-to-now");
+const startTimestamp = new Date(2019, 3, 8).getTime();
+
+const updateTimeStr = () => {
+  let offset = parseInt(
+      (new Date().getTime() - startTimestamp) / 1000,
+      10
+    ),
+    day = Math.floor(offset / 86400),
+    hour = Math.floor((offset % 86400) / 3600),
+    minute = Math.floor(((offset % 86400) % 3600) / 60),
+    second = Math.floor(((offset % 86400) % 3600) % 60);
+  timeToNowDOM.innerHTML =
+    day + "天" + hour + "小时" + minute + "分钟" + second + "秒";
+  setTimeout(updateTimeStr, 500);
+}
+
+setTimeout(updateTimeStr, 500);
+</script>
+
+
+      <div class="back-to-top hidden">
+  <span>
+    <i class="iconfont icon-60"></i><span></span>%
+  </span>
+</div>
+
+<script>
+const updateIconToTop = percent => {
+  let dom = document.querySelector(".back-to-top span span");
+  dom.innerText = percent;
+  if(percent < 1) {
+    document.querySelector(".back-to-top").className = "back-to-top hidden";
+  } else {
+    document.querySelector(".back-to-top").className = "back-to-top";
+  }
+}
+
+const handleScoll = () => {
+  let isRunning = false;
+  return () => {
+    if (isRunning) return;
+    isRunning = true;
+    window.requestAnimationFrame(timestamp => {
+      let scrollTop =
+          document.documentElement.scrollTop || document.body.scrollTop,
+        scrollHeight =
+          document.documentElement.scrollHeight ||
+          document.body.scrollHeight,
+        clientHeight =
+          document.documentElement.clientHeight ||
+          document.body.clientHeight;
+      isRunning = false;
+      if (scrollTop <= 1) {
+        updateIconToTop(0);
+        return;
+      }
+      if (scrollTop + clientHeight >= scrollHeight) {
+        updateIconToTop(100);
+      } else {
+        updateIconToTop(parseInt(
+          100 * scrollTop / (scrollHeight - clientHeight),
+          10
+        ));
+      }
+    });
+  };
+}
+
+const backToTop = () => {
+  let scrollTop =
+      document.documentElement.scrollTop || document.body.scrollTop,
+    delay = 10,
+    time = 200;
+  if (scrollTop <= 20) {
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    return;
+  }
+  let step = Math.ceil(scrollTop * delay / time);
+  let timer = setInterval(() => {
+    scrollTop =
+      document.documentElement.scrollTop || document.body.scrollTop;
+    if (scrollTop - step <= 0) {
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      clearInterval(timer);
+    } else {
+      document.documentElement.scrollTop = scrollTop - step;
+      document.body.scrollTop = scrollTop - step;
+    }
+  }, delay);
+}
+
+document.addEventListener("scroll", handleScoll(), false);
+
+document.querySelector(".back-to-top").addEventListener("click", backToTop, false);
+
+</script>
+
+    </div>
+
+    
+      <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML" async></script>
+<script>
+  (() => {
+    const mathjaxConfig = {
+      showProcessingMessages: false, //关闭js加载过程信息
+      messageStyle: "none", //不显示信息
+      jax: ["input/TeX", "output/HTML-CSS"],
+      tex2jax: {
+        inlineMath: [["$", "$"], ["\\(", "\\)"]], //行内公式选择符
+        displayMath: [["$$", "$$"], ["\\[", "\\]"]], //段内公式选择符
+        skipTags: ["script", "noscript", "style", "textarea", "pre", "code", "a"] //避开某些标签
+      },
+      "HTML-CSS": {
+        availableFonts: ["STIX", "TeX"], //可选字体
+        showMathMenu: false //关闭右击菜单显示
+      }
+    }
+
+    let mathjaxInterval = setInterval(() => {
+      if(!window.MathJax){
+        return;
+      }
+      window.MathJax.Hub.Config(mathjaxConfig)
+      window.MathJax.Hub.Queue(["Typeset", MathJax.Hub, document.getElementById('app')])
+
+      clearInterval(mathjaxInterval)
+    }, 10)    
+  })()
+</script>
+    
+
+    <script src="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.js" async></script>
+<script async>
+  let fancyTimer = setInterval(function(){
+    if(!window.$){
+      return;
+    }
+    $(document).ready(function() {
+      $(".post img").each(function () {
+        if($(this).parent().get(0).tagName.toLowerCase() === "a") {
+          return;
+        }
+        // $(this).attr("data-fancybox", "gallery"); // if you add 'data-fancybox', img will display after showed
+        var element = document.createElement("a");
+        $(element).attr("data-fancybox", "gallery");
+        $(element).attr("href", $(this).attr("src"));
+        $(this).wrap(element);
+      });
+      
+      clearInterval(fancyTimer);
+    });
+  }, 10);
+</script>
+
+    
+  </body>
+
+</html>

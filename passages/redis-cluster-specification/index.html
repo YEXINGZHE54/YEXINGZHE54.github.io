@@ -421,7 +421,308 @@ var _hmt = _hmt || [];
 </ol>
 <p>当这些情况发生时，客户端应该像前面几节中提到的调整本地哈希槽映射。</p>
 <p>连接的只读状态可以通过 <a href="https://redis.io/commands/readwrite" target="_blank" rel="noopener">READWRITE</a> 指令清除。</p>
-<h2 id="容错"><a href="#容错" class="headerlink" title="容错"></a>容错</h2><p>待续</p>
+<h2 id="容错"><a href="#容错" class="headerlink" title="容错"></a>容错</h2><h3 id="心跳检测与Gossip消息"><a href="#心跳检测与Gossip消息" class="headerlink" title="心跳检测与Gossip消息"></a>心跳检测与Gossip消息</h3><p>Redis群集节点不断交换ping和pong数据包。这两种数据包具有相同的结构，并且都携带重要的配置信息。唯一的实际区别是消息类型字段。我们将ping和pong包通称为心跳包。</p>
+<p>通常节点发送ping数据包，触发接收方回复pong数据包。当然这不是必须如此。节点也可以仅发送pong数据包以向其他节点发送有关其配置的信息，而不会触发回复。例如，这在希望尽快广播新配置的情况下很有用。</p>
+<p>通常，节点将每秒ping几个随机节点，以确保每个节点发送的ping数据包总数（以及接收到的pong数据包）是一个恒定的数量，而不会随着集群中的节点数量变化。</p>
+<p>但是，每个节点还需要ping所有超过一半NODE_TIMEOUT时间，未发送过ping或没有接收pong消息的节点。在NODE_TIMEOUT过去之前，节点还会尝试将重新建立到该节点的新连接，避免因为当前TCP连接的故障而误认为连接不可达。</p>
+<p>如果将NODE_TIMEOUT设置为较小的数字同时节点数（N）非常大，那么全局消息数量可能变得相当大，因为每个节点将尝试对那些超过一半NODE_TIMEOUT时间没有新消息的其他节点发送ping指令。</p>
+<p>例如，在100节点集群中将超时设置为60秒，每个节点将尝试每30秒发送99个ping，总ping数为3.3 /秒。乘以100个节点，在整个群集中每秒330次ping。</p>
+<p>有一些方法可以降低消息数量，但目前Redis集群还没有出现有关失效检测机制占用带宽的问题报告，因此这种简单直接的设计用到了现在。注意，即使是在上面的例子中，每秒交换的330个数据包也是在100个不同的节点之间均匀分配，因此每个节点接收的流量是可接受的。</p>
+<h3 id="心跳包内容"><a href="#心跳包内容" class="headerlink" title="心跳包内容"></a>心跳包内容</h3><p>Ping和pong数据包包含了所有类型数据包通用的消息头（其他数据包例如，请求故障转移投票的数据包），以及特定于Ping和Pong数据包的Gossip消息部分。</p>
+<p>公共消息头具有以下信息：</p>
+<ul>
+<li><p>节点ID，一个160位伪随机字符串，在第一次创建节点时分配，并在节点所有生命周期内保持不变。</p>
+</li>
+<li><p>发送节点的currentEpoch和configEpoch字段，用来承载执行Redis Cluster使用的分布式算法（这将在下一节中详细介绍）。如果节点是从节点，则configEpoch是其主节点的最后已知的configEpoch。</p>
+</li>
+<li><p>节点标志，代表了节点是从节点或者主设备，以及其他单比特节点信息。</p>
+</li>
+<li><p>由发送节点服务的散列槽的位图，或者如果节点是从属节点，则代表其主节点服务的槽的位图。</p>
+</li>
+<li><p>发送方TCP普通服务端口（即Redis用于接受客户端命令的端口;添加10000可以得到集群总线端口）。</p>
+</li>
+<li><p>从发送方的角度来看集群的状态（下线或者可用）。</p>
+</li>
+<li><p>发送节点的主节点ID（如果它是从属节点）。</p>
+</li>
+</ul>
+<p>Ping和pong包也包含Gossip消息。这部分消息向接收方展示了发送方节点对集群中其他节点的看法，但仅包含发送者已知的几个随机节点的信息。Gossip消息中提到的节点数量与集群大小成比例。</p>
+<p>Gossip消息中提到的每个节点信息，将包含以下字段：</p>
+<ul>
+<li>节点ID。</li>
+<li>节点的IP和端口。</li>
+<li>节点标志。</li>
+</ul>
+<p>Gossip消息允许接收节点从发送者的角度获得关于其他节点的状态的信息。这对于故障检测和自动发现集群中的其他节点都很有用。</p>
+<h3 id="故障检测"><a href="#故障检测" class="headerlink" title="故障检测"></a>故障检测</h3><p>Redis群集故障检测用于识别主节点或从节点无法被大多数节点访问的场景，然后通过将从节点提升为主节点来进行应对故障。如果无法提升从节点，群集将处于错误状态，停止接收来自客户端的请求。</p>
+<p>如前所述，每个节点都会为每一个其他已知节点设置一系列关联标志。有两个标志用于故障检测，称为PFAIL和FAIL。 PFAIL表示可能的失败，是一种未确认的失败类型。FAIL意味着节点出现故障，并且大多数主节点在固定有限时间内确认了这种情况。</p>
+<p><strong>PFAIL标志</strong>：</p>
+<p>当节点的可达时间超过NODE_TIMEOUT时，这个节点会被标记为PFAIL。主节点和从节点都可以将一个节点标记为PFAIL，而不管其类型如何。</p>
+<p>Redis群集节点的不可达性概念指的是，我们有一个活动的ping（我们发送的ping，我们尚未得到回复）等待的时间超过NODE_TIMEOUT。要使此机制起作用，与网络往返时间相比，NODE_TIMEOUT必须足够大。为了提升正常时期的可靠性，只要NODE_TIMEOUT的一半时间已经过去而且对端节点没有回复ping，节点将尝试重新连接。此机制可确保连接保持活跃状态，因此避免了断开的连接导致误报节点故障。</p>
+<p><strong>FAIL标志</strong>：</p>
+<p>PFAIL标志只是每个节点关于其他节点的本地信息，但它不足以触发从节点选举。要想让节点被视为下线状态，PFAIL条件需要升级到FAIL条件。</p>
+<p>如本文档的节点心跳部分所述，每个节点都向每个其他节点发送Gossip消息，包括一些随机已知节点的状态。每个节点最终都会到关于其他每个节点的标志。这样每个节点就有了通知其他节点它们检测到的故障情况的机制。</p>
+<p>满足以下条件时，PFAIL条件将升级为FAIL条件：</p>
+<ul>
+<li><p>某个节点A将另一个节点B标记为PFAIL。</p>
+</li>
+<li><p>节点A通过Gossip消息从群集中的大多数主节点的角度收集关于B状态的信息。</p>
+</li>
+<li>大多数主节点在NODE_TIMEOUT * FAIL_REPORT_VALIDITY_MULT时间内发出PFAIL或FAIL状态信号。 （当前实现中的有效性因子设置为2，因此这只是NODE_TIMEOUT时间的两倍）。</li>
+</ul>
+<p>如果满足以上所有条件，则节点A将：</p>
+<ul>
+<li><p>标记节点B为FAIL。</p>
+</li>
+<li><p>向所有可达节点发送FAIL消息。</p>
+</li>
+</ul>
+<p>FAIL消息将强制每个接收方将节点B标记为FAIL状态，无论它是否已经标记处于PFAIL状态的节点。</p>
+<p>请注意，FAIL标志是单向的。也就是说，节点可以从PFAIL转换成FAIL，但只能在以下情况下清除FAIL标志：</p>
+<ul>
+<li><p>该节点已经可以访问并且是从属节点。在这种情况下，可以清除FAIL标志，因为从节点不需要故障转移。</p>
+</li>
+<li><p>该节点已经可以访问，并且是不为任何哈希槽提供服务的主节点。在这种情况下，可以清除FAIL标志，因为没有哈希槽的主节点实际上不参与集群，并且正在等待配置以加入集群。</p>
+</li>
+<li><p>该节点已经可以访问并且是主节点，但是很长时间（NODE_TIMEOUT的N倍）已经过去而没有出现可检测的从节点选举。这种情况下，最好重新加入群集并继续服务。</p>
+</li>
+</ul>
+<p>值得注意的是，尽管PFAIL  - &gt; FAIL过渡使用了一种协议形式，但使用的协议很薄弱：</p>
+<ol>
+<li><p>节点在一段时间内收集其他节点的视图，因此即使需要大多数主节点达成“一致”，实际上这只是我们在不同时间从不同节点收集的状态，我们不确定也不需要恰好在某个时刻大多数主节点都达成了一致。由于我们会丢弃旧的故障报告，因此FAIL状态确实是由大多数主节点在一个时间窗口内发出故障信号所触发的。</p>
+</li>
+<li><p>虽然检测到FAIL条件的节点会使用FAIL消息强制集群中的其他节点上执行该操作，但并不能确保消息可以到达所有节点。例如，节点可以检测到FAIL条件，并且由于网络分区将不能到达任何其他节点。</p>
+</li>
+</ol>
+<p>Redis集群故障检测机制具有活跃度要求：最终所有节点都应该就给定节点的状态达成一致。裂脑可能会导致两种情况，一些少数节点认为该节点处于FAIL状态，或者少数节点认为该节点未处于FAIL状态。在这两种情况下，最终集群将统一对给定节点的状态视图：</p>
+<p>情况1：如果大多数主节点已将节点标记为FAIL，由于故障检测及其产生的连锁效应，其他节点最终将目标节点标记为FAIL，因为在指定的时间窗口中将产生足够多的故障报告。</p>
+<p>案例2：当只有少数主节点将节点标记为失败时，从节点当选为主节点的将不会发生（因为它使用更正式的算法，确保每个节点最终都知道这次当选），那么每个节点将根据前文所述的规则清除FAIL状态（即NODE_TIMEOUT经过N次后没有从节点选举成功）。</p>
+<p><strong>FAIL标志仅仅是运行选主算法的安全部分的触发器</strong>。理论上，从节点的行为不受FAIL标志影响，在发现主节点无法访问时就启动选主算法，并等待其他主节点的拒绝消息以确认主节点实际上仍然可以被多数主节点访问。然而，这种PFAIL-&gt; FAIL状态过渡，弱一致协议和强制在集群中最短时间内传播状态的FAIL消息的复杂性实际具有更多优势。由于这些机制的存在，当群集处于错误状态的存在，通常所有节点将几乎同时停止接受写入。从使用Redis集群的应用程序的角度来看，这是一个理想的功能。还避免了由于本地问题而无法到达其主设备（此时，主设备仍然可由大多数其他主节点访问）的从节点发起的错误选举尝试。</p>
+<h2 id="配置处理，传播和故障恢复"><a href="#配置处理，传播和故障恢复" class="headerlink" title="配置处理，传播和故障恢复"></a>配置处理，传播和故障恢复</h2><h3 id="集群当前纪元-currentEpoch"><a href="#集群当前纪元-currentEpoch" class="headerlink" title="集群当前纪元(currentEpoch)"></a>集群当前纪元(currentEpoch)</h3><p>Redis集群使用类似于Raft算法“term”的概念。在Redis集群中，该术语称为纪元，它用来为事件提供增量版本控制。当多个节点提供的信息发生冲突时，其他节点可以了解哪个集群状态是最新的。</p>
+<p>currentEpoch是64位无符号整数。</p>
+<p>在创建节点时，每个Redis节点（包括从节点和主节点）都将currentEpoch设置为0。</p>
+<p>每当从其他节点接收到消息时，如果发送方的纪元（集群总线消息报头的一部分）大于本地节点的纪元，那么currentEpoch被更新为发送方的纪元。</p>
+<p>正因如此，最终所有节点的currentEpoch与集群中最大的configEpoch达成一致。</p>
+<p>当群集的状态发生变化且节点需要某种协议以执行某些操作时，可以用到这个信息。</p>
+<p>目前，这只发生在从节点晋升为主节点期间，下一节会展开描述。基本上可以认为纪元就是集群的逻辑时钟，并且规定纪元大的信息胜过纪元小的。</p>
+<h3 id="配置纪元-configEpoch"><a href="#配置纪元-configEpoch" class="headerlink" title="配置纪元(configEpoch)"></a>配置纪元(configEpoch)</h3><p>每个主节点会在ping和pong数据包中广播他的configEpoch以及一个其负责的哈希槽的位图。</p>
+<p>创建新节点时，configEpoch在master中设置为零。</p>
+<p>在从节点发起选举的时候会创建新的configEpoch。从节点通过递增epoch的方式试图取代主节点，并试图获得大多数主节点的授权。当从节点获得了授权，将创建一个新的唯一configEpoch，并且从节点将使用新的configEpoch转为主节点。</p>
+<p>如下一节所述，configEpoch有助于在不同节点声明不同配置（由于网络分区和节点故障而可能发生的情况）时解决冲突。</p>
+<p>从节点也会在ping和pong数据包中通告configEpoch字段，此时该字段代表最近一次与其通信的主节点的configEpoch。这允许其他实例据此检测出旧配置需要更新的从节点（主节点不会投票给旧配置的从节点）。</p>
+<p>每次某个已知节点的configEpoch变化时，所有接收到此信息的节点都会将configEpoch永久存储在nodes.conf文件中。 currentEpoch值也是如此。在节点继续运行其他操作之前，这两个变量可以确保被保存并刷新到磁盘。</p>
+<p>在故障转移期间使用简单算法生成的configEpoch值保证是新的，增量的和唯一的。</p>
+<h3 id="从节点选举与晋升"><a href="#从节点选举与晋升" class="headerlink" title="从节点选举与晋升"></a>从节点选举与晋升</h3><p>从节点的选举与晋升过程由从节点处理，在主节点的帮助下获得投票支持。如果从节点具备了成为主节点的先决条件，并且观察到主节点处于FAIL状态，那么它可以发起选举。</p>
+<p>从节点要想晋升为主节点，它需要发起选举并赢得选举。如果主节点处于FAIL状态，那么该节点的从节点都可以开始选举，但是只有一个从节点会赢得选举并晋升。</p>
+<p>当满足以下条件时，从节点会开始发起选举：</p>
+<ul>
+<li><p>主节点处于FAIL状态。</p>
+</li>
+<li><p>主节点为至少一个哈希槽提供服务。</p>
+</li>
+<li><p>与主服务器断开连接的时间不超过给定的时间，以确保从节点上的数据尽量最新。此时间是用户可配置的。</p>
+</li>
+</ul>
+<p>为了被选举，从节点首先要递增其currentEpoch计数器，并请求从其他主实例获得投票。</p>
+<p>通过向集群的每个主节点广播FAILOVER_AUTH_REQUEST消息的方式，从节点请求获得投票，然后至多等待NODE_TIMEOUT的两倍时间（但总是至少持续2秒）。</p>
+<p>一旦主节点通过FAILOVER_AUTH_ACK消息将票投给某个从节点，在接下来的NODE_TIMEOUT * 2时间段内，它就不能再投票给同一主节点的其他从节点。在此期间，它不允许对涉及同一个主节点的其他授权请求进行回复。虽然这不是保证算法安全性所必需的，但对于防止多个从节点同时被选中（使用不同的configEpoch）非常有用，通常这不是我们希望发生的情况。</p>
+<p>如果AUTH_ACK回复中包含的epoch小于当前最新拉票请求被发出时的currentEpoch，这个投票会被丢弃。这确保了从节点不会将历史选举的投票计入当前选举。</p>
+<p>如果从节点接收到来自大多数主节点的ACK，它就赢得了选举。否则，如果在2<em>NODE_TIMEOUT期间没有收到多数派投票（至少2秒），那么选举将中止，并且在NODE_TIMEOUT </em> 4之后将再次尝试选举（并且始终至少4秒）。</p>
+<h3 id="从节点排名"><a href="#从节点排名" class="headerlink" title="从节点排名"></a>从节点排名</h3><p>如果主节点陷入FAIL状态，从节点会在等待一段时间之后开始发起选举。延迟规则计算如下：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">DELAY = <span class="number">500</span> milliseconds + random delay between <span class="number">0</span> <span class="keyword">and</span> <span class="number">500</span> milliseconds +</span><br><span class="line">        SLAVE_RANK * <span class="number">1000</span> milliseconds.</span><br></pre></td></tr></table></figure>
+<p>固定延迟确保FAIL状态在群集中传播开，否则如果从节点尝试发起选举，但其他主节点仍然不知道FAIL状态，将会拒绝投票。</p>
+<p>随机延迟用于避免从节点的同步操作，因此它们不太可能同时开始选举。</p>
+<p>SLAVE_RANK代表了从节点的排名，这与从主服务器处理的复制数据量有关。当主节点发生故障时，从节点互相交换消息以建立（尽力而为）排名：具有最新复制偏移的从节点为等级0，复制偏移第二的等级为1，依此类推。通过这种方式，拥有最新数据的从节点有机会在其他从节点前当选。</p>
+<p>排名顺序不是严格强制的;如果高级别的从节点未能成功当选，其他节点将很快尝试。</p>
+<p>一旦从节点赢得选举，它就会获得一个新的唯一且增量的configEpoch，大于任何其他现有的主节点。它开始在ping和pong数据包中声明自己为主节点，提供服务的哈希槽，其中的configEpoch将大于过去的。</p>
+<p>为了加速其他节点的重新配置，PONG消息会被广播到集群的所有节点。目前，不可达节点可以通过从其他节点接收ping或pong数据包的方式被重新配置，或者如果其他节点检测到它的心跳包信息已过期，将从其他节点接收到UPDATE数据包。</p>
+<p>其他节点如果检测到有一个新主服务器提供相同的哈希槽服务并具有更大的configEpoch，将会升级其配置。旧主节点的从节点（也包括故障转移后重新加入集群的旧主节点）不仅会升级配置，还会重新配置以从新主节点进行复制。如何配置重新加入群集的节点将在下一节中介绍。</p>
+<h3 id="投票请求的回复"><a href="#投票请求的回复" class="headerlink" title="投票请求的回复"></a>投票请求的回复</h3><p>在上一节中，讨论了从节点如何发起选举与当选。本节从投票的主节点的角度解释发生的事情。</p>
+<p>主节点收到来自从节点的FAILOVER_AUTH_REQUEST请求，以期得到投票。</p>
+<p>从节点要获得投票，需要满足以下条件：</p>
+<ol>
+<li><p>主节点接到只对同一纪元投票一次，并且拒绝投票给旧纪元：每个主节点都会记录一个lastVoteEpoch字段，只要auth请求数据包中的currentEpoch不大于lastVoteEpoch，它就会拒绝投票。当主节点对投票请求作出肯定回复时，lastVoteEpoch会相应更新，并安全地存储在磁盘上。</p>
+</li>
+<li><p>只有当从节点所属的主节点被标记为FAIL时，其他主节点才会投票给从节点。</p>
+</li>
+<li><p>Auth请求的currentEpoch小于主节点currentEpoch的，请求将被忽略。因此主节点的回复始终与auth请求由相同的currentEpoch。如果从节点再次发起选举投票，需要增加currentEpoch，这个机制可以避免主节点的延迟旧回复被计入新投票。</p>
+</li>
+</ol>
+<p>如果不使用规则3，可能会导致的问题示例：</p>
+<p>主节点的currentEpoch为5，lastVoteEpoch为1（这可能在几次选举失败的情况下出现）</p>
+<ul>
+<li><p>从节点currentEpoch是3。</p>
+</li>
+<li><p>从节点试图用epoch 4（3 + 1）发起选举，主节点用currentEpoch 5回复OK，但是回复被延迟了。</p>
+</li>
+<li><p>后续从节点尝试再次发起选举，使用epoch 5（4 + 1），这时带有epoch 5的延迟回复到达了slave，并被接受为有效投票。</p>
+</li>
+</ul>
+<ol>
+<li><p>如果已经发出投票，那么接下来在NODE_TIMEOUT * 2时间段期间，主节点不会再投票给同一主节点的从节点。这不是严格要求的，因为两个从节点不可能在同一纪元赢得选举。但实际上它确保了，当一个从节点被选中时，它有足够的时间通知其他从节点，并避免另一个从节点为了执行不必要的第二次故障转移，赢得新选举的可能性。</p>
+</li>
+<li><p>参与投票的主节点不会以任何方式去辨别最好的从节点。只要从节点的主节点处于FAIL状态并且当前节点没有在当前纪元内投票，则会授予投票。最好的从节点通常最有可能开始发起选举并在其他从节点之前赢得选举，因为它通常能够提前开始投票过程，因为它的排名更高，如上一节所述。</p>
+</li>
+<li><p>当主节点拒绝投票时，它不会回复否定消息，该请求只会被忽略。</p>
+</li>
+<li><p>如果从节点发送的configEpoch小于接收方节点中记载的从节点哈希槽所对应的configEpoch，节点将会拒绝投票。请记住，从节点发送的是它的主节点的configEpoch，以及哈希槽的位图。这意味着请求获得投票的从节点必须拥有其想要故障转移的主节点的哈希槽配置，该配置必须等于主节点配置或者更新。</p>
+</li>
+</ol>
+<h3 id="网络分区期间configEpoch的用途案例"><a href="#网络分区期间configEpoch的用途案例" class="headerlink" title="网络分区期间configEpoch的用途案例"></a>网络分区期间configEpoch的用途案例</h3><p>本节展示了纪元概念如何让从节点晋升过程对网络分区更具抵抗力。</p>
+<ul>
+<li><p>主节点无限期不可达。主节点有三个从节点A，B，C。</p>
+</li>
+<li><p>节点A赢得选举并晋升为主节点。</p>
+</li>
+<li><p>网络分区使与大多数集群隔离，不可用。</p>
+</li>
+<li><p>节点B赢得选举并晋升为主节点。</p>
+</li>
+<li><p>网络分区使B与大多数集群隔离，不可用。</p>
+</li>
+<li><p>先前的网络分区被修复，A再次可用。</p>
+</li>
+</ul>
+<p>此时B已下线且A还保持master的角色（实际上UPDATE消息应该立即重新配置它，但在这里我们假设所有UPDATE消息都丢失了）。与此同时，节点C将尝试选举，以便将B故障转移。这时将发生如下情况：</p>
+<ol>
+<li><p>C将尝试选举并成功当选，因为对于其他大多数珠节点而言，它的主人实际上已经下线了。它将获得一个新的增量configEpoch。</p>
+</li>
+<li><p>A无法声称自己是负责哈希槽的主节点，因为与A发布的配置纪元相比，其他节点已经将相同的哈希槽关联到更高的配置纪元（B的纪元）。</p>
+</li>
+<li><p>因此，所有节点都将升级其映射表，将哈希槽关联到C，集群将继续其操作。</p>
+</li>
+</ol>
+<p>正如您将在下一节中看到的，重新加入群集的陈旧节点通常会尽快收到有关配置更改的通知，因为只要它ping任何其他节点，接收方就会检测到它有陈旧信息并将发送一个UPDATE消息。</p>
+<h3 id="哈希槽配置传播"><a href="#哈希槽配置传播" class="headerlink" title="哈希槽配置传播"></a>哈希槽配置传播</h3><p>Redis集群的一个重要部分就是有关哪个节点为哪一组哈希槽提供服务的信息传播机制。这对于新机器的启动以及在从节点晋升为服务哈希槽的主节点后，集群其他节点升级配置的能力至关重要。</p>
+<p>同样的机制还可以让网络分区的节点以合理的方式重新加入集群。</p>
+<p>哈希槽配置有两种传播方式：</p>
+<ol>
+<li><p>心跳消息。 ping和pong消息包含了有关发送方（或其主节点）负责的哈希槽信息。</p>
+</li>
+<li><p>UPDATE消息。由于在每个心跳包中都有发送方的configEpoch和哈希槽信息，如果接收方发现信息是陈旧的，它将发送包含新信息的包，迫使过期节点更新其信息。</p>
+</li>
+</ol>
+<p>心跳或UPDATE消息的接收方使用一些简单规则来更新哈希槽映射表。创建新的Redis群集节点时，其本地哈希槽表被简单地初始化为NULL条目，以便每个哈希槽不绑定或链接到任何节点。这看起来类似于以下内容：</p>
+<figure class="highlight ruby"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="number">0</span> -&gt; NULL</span><br><span class="line"><span class="number">1</span> -&gt; NULL</span><br><span class="line"><span class="number">2</span> -&gt; NULL</span><br><span class="line">...</span><br><span class="line"><span class="number">16383</span> -&gt; NULL</span><br></pre></td></tr></table></figure>
+<p>为了更新其哈希槽表，第一个需要遵循的规则如下：</p>
+<p><strong>规则1</strong>：如果哈希槽未被分配（设置为NULL），并且某个已知节点声明对它负责，那么节点将修改本地哈希槽表并将哈希槽与其关联。</p>
+<p>因此，如果我们收到节点A发来的心跳包，configEpoch值为3，并且声称对哈希槽1和2提供服务，则该表将被修改为：</p>
+<figure class="highlight ruby"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="number">0</span> -&gt; NULL</span><br><span class="line"><span class="number">1</span> -&gt; A [<span class="number">3</span>]</span><br><span class="line"><span class="number">2</span> -&gt; A [<span class="number">3</span>]</span><br><span class="line">...</span><br><span class="line"><span class="number">16383</span> -&gt; NULL</span><br></pre></td></tr></table></figure>
+<p>创建新群集时，系统管理员需要手动分配（使用CLUSTER ADDSLOTS命令，通过redis-trib命令行工具或通过任何其他方式）每个主节点服务的哈希槽，并且这些信息将快速传播到集群中。</p>
+<p>但是这条规则还不够。我们知道哈希槽映射还可能在如下两个场景下发生变化：</p>
+<ol>
+<li><p>在故障转移期间，从节点会替换其主节点。</p>
+</li>
+<li><p>哈希槽从一个节点重新分配到另一个节点。</p>
+</li>
+</ol>
+<p>现在让我们先关注故障转移的情况。当从节点故障转移其主节点时，它获得新的configEpoch，大于其主节点的值（并且通常大于先前生成的任何其他configEpoch）。例如，作为主节点A的从节点B，可以使用configEpoch4来故障转移.它将开始对外发送心跳包（第一次在集群范围内进行大规模广播），并且由于以下第二规则，接收方将更新他们的哈希槽表：</p>
+<p><strong>规则2</strong>：如果已经分配了一个哈希槽，并且一个已知节点使用的configEpoch大于当前与该槽相关联的主机的configEpoch，哈希槽将被重新绑定到新节点。</p>
+<p>因此，如果接收到来自B的消息，其中包含configEpoch为4，并且声称对哈希槽1和2提供服务之后，接收方将按以下方式更新其表：</p>
+<figure class="highlight ruby"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="number">0</span> -&gt; NULL</span><br><span class="line"><span class="number">1</span> -&gt; B [<span class="number">4</span>]</span><br><span class="line"><span class="number">2</span> -&gt; B [<span class="number">4</span>]</span><br><span class="line">...</span><br><span class="line"><span class="number">16383</span> -&gt; NULL</span><br></pre></td></tr></table></figure>
+<p>活动(liveness)属性：由于第二个规则，最终集群中的所有节点都会达成一致，对于给定哈希槽，声明最大configEpoch的节点将成为这个哈希槽的所有者。</p>
+<p>Redis群集中的这个机制被称为<strong>最近故障转移获胜</strong>。</p>
+<p>在重新分片期间也会发生同样的情况。 当节点完成哈希槽的导入操作时，其configEpoch会增加，以确保配置更改可以在整个群集中传播开。</p>
+<h3 id="走近UPDATE消息"><a href="#走近UPDATE消息" class="headerlink" title="走近UPDATE消息"></a>走近UPDATE消息</h3><p>在前面几节的基础上，更容易理解UPDATE消息的工作原理。 节点A可能在一段时间后重新加入群集。 它将发送心跳包，声称它服务于哈希槽1和2，configEpoch为3。含有更新版(配置)信息的接收方，将发现这些散列槽已经与更高configEpoch的节点B相关联。 因此，他们将哈希槽的新配置通过UPDATE消息发送给A。 由于上面的规则2，A将更新其本地配置。</p>
+<h3 id="节点重新加入集群"><a href="#节点重新加入集群" class="headerlink" title="节点重新加入集群"></a>节点重新加入集群</h3><p>当节点重新加入群集时，基本上使用与上面相同的机制。继续上面的例子，节点A被通知哈希槽1和2现在由B提供服务。假设这是A服务的唯二哈希槽，那么A服务的哈希槽的数量将下降到0！所以A将被重新配置成新主节点的从节点。</p>
+<p>实际规则比这复杂一点。通常，A可能在很长一段时间之后才重新加入，这时最初由A服务的哈希槽现在改由多个主节点提供服务，例如，哈希槽1可以由B服务，而哈希槽2由C提供。 </p>
+<p>因此，实际的Redis集群节点角色切换规则是这样：<strong>旧主节点将更改其配置，以复制（变成它的从节点）”窃取”了最后一个哈希槽的节点</strong>。</p>
+<p>在重新配置期间，最终哈希槽的数量将下降到零，并且节点将相应地被重新配置。请注意，在简单情况下，这只意味着旧节点会成为在故障转移后替换它的从节点的从节点。但是，在更一般情况下，这个规则可以涵盖所有可能的情况。</p>
+<p>从节点也一样：它们也被重新配置，从”窃取”了前任主节点的最后一个哈希槽的节点复制数据。</p>
+<h3 id="副本迁移"><a href="#副本迁移" class="headerlink" title="副本迁移"></a>副本迁移</h3><p>Redis Cluster实现了一个名为副本迁移的概念，以提高系统的可用性。我们的想法是，在具有主从配置的集群中，如果主从之间的映射是固定的，那么随着时间的推移，在发生多次彼此独立的单点故障后，那么集群可用性会变得很有限。</p>
+<p>例如，在每个主节点都有一个从节点的集群中，主节点或从节点之一发生故障时集群还可以继续运行，但如果两者都失败则集群无法提供服务。然而，还存在一类故障，是由日积月累的硬件或软件问题引起的互相独立的单点故障。例如：</p>
+<ul>
+<li><p>主节点A有一个从节点A1。</p>
+</li>
+<li><p>A失败了。 A1被提升为新的主节点。</p>
+</li>
+<li><p>三小时后，A1以独立的方式失败（与A的失败无关）。由于节点A仍处于下线状态，因此没有其他从节点可以晋升为主节点。集群将无法继续正常运行。</p>
+</li>
+</ul>
+<p>如果主从之间的映射是固定的，那么要使集群更能抵抗上述情况的唯一方法就是向每个主服务器添加从服务器，但这样做成本很高，因为它需要运行更多Redis实例，更多内存等等。</p>
+<p>替代方案是在集群中创建不对称，让集群布局随着时间的推移自动变更。例如，群集可以具有三个主节点A，B，C。A和B各自具有单个从节点A1和B1。然而，主节点C是不同的并且具有两个从节点：C1和C2。</p>
+<p>副本迁移是自动重新配置从节点以便迁移到无副本覆盖的主站（无可用从节点）的过程。有了副本迁移，上面提到的场景变为：</p>
+<ul>
+<li><p>A失败了。 A1晋升。</p>
+</li>
+<li><p>由于A1没有被任何从节点备份，C2迁移为A1的从节点。</p>
+</li>
+<li><p>三小时后，A1也失败了。</p>
+</li>
+<li><p>C2被提升为新的主节点以取代A1。</p>
+</li>
+<li><p>群集可以继续操作。</p>
+</li>
+</ul>
+<h3 id="副本迁移算法"><a href="#副本迁移算法" class="headerlink" title="副本迁移算法"></a>副本迁移算法</h3><p>迁移算法不使用任何形式的一致性协议，因为Redis集群中的主从布局，不属于与configEpoch一致和/或版本化的集群配置。相反，当主节点没有从节点备份时，它使用算法来避免从节点的大规模迁移。该算法最终确保（一旦集群配置稳定），每个主节点将由至少一个从节点备份。</p>
+<p>如下是算法的工作原理。首先，我们需要在此上下文中定义什么是好的副本：从节点的角度来看，好的副本是不处于FAIL状态的从节点。</p>
+<p>每当从节点检测到至少有一个主节点没有好的副本的时候，就会触发算法的执行。然而，在所有检测到这个情况的从节点中，只有节点的部分子集会采取行动。通常这只会包含单个从节点，除非不同的从节点在给定时刻对其他节点的故障状态有略微不同的视图。</p>
+<p>这个采取行动的节点，是具有最大连接从节点数的主节点中的从节点，它不处于FAIL状态且具有最小的节点ID。</p>
+<p>因此，如果有10个主服务器，每个服务器有1个从节点，还有2个主服务器各有5个从节点，那么将尝试迁移的从服务器会是：在具有5个从服务器的2个主服务器中 - 具有最低节点ID的服务器。由于没有使用协议，当集群配置不稳定时，可能会出现竞争条件，其中多个从节点认为自己才是具有较低节点ID的非故障从节点（在实践中不太可能发生这种情况） ）。如果发生这种情况，结果是多个从节点迁移到同一个主服务器，这是无害的。如果竞争发生的方式会导致主节点没有从节点，则只要集群再次稳定，算法将再次重新执行并将从设备迁移回主节点。</p>
+<p>最终每个主节点都将得到至少一个从节点的备份。但是，正常行为是单个从节点从具有多个从节点的主节点迁移到孤立主节点。</p>
+<p>该算法可以被一个名为<strong>cluster-migration-barrier</strong>的可配置参数控制：在从节点迁移之前，必须留下主节点的良好副本数。例如，如果此参数设置为2，则只有在其主服务器还能保留两个工作从节点时，从节点才能尝试迁移。</p>
+<h3 id="configEpoch冲突解决算法"><a href="#configEpoch冲突解决算法" class="headerlink" title="configEpoch冲突解决算法"></a>configEpoch冲突解决算法</h3><p>在故障转移期间通过从节点晋升创建新的configEpoch值时，它们将保证是唯一的。</p>
+<p>但是，在两种不同的情况下，新的configEpoch值以不安全的方式创建，只是递增本地节点的本地currentEpoch并希望同时没有冲突。这两个事件都是系统管理员触发的：</p>
+<ol>
+<li><p>具有TAKEOVER选项的CLUSTER FAILOVER命令能够手动将从节点提升为主节点，而无需大多数主节点可用。例如，这在多数据中心设置中很有用。</p>
+</li>
+<li><p>集群再平衡过程中，迁移哈希槽还会在本地节点内生成新的configEpoch，出于性能原因不需要达成一致。</p>
+</li>
+</ol>
+<p>具体来说，在手动重新分片期间，当哈希槽从节点A迁移到节点B时，重新分片程序将强制B将其配置升级到集群中已知最大的epoch加1（除非节点已经具有最大configEpoch），而不需要来自其他节点的同意。通常，真实世界的重新分片涉及移动数百个散列槽（特别是在小集群中）。对于每个移动的哈希槽，要求在重新分片期间生成新configEpoch的协议是低效的。此外，每次还需要在每个节点中使用fsync来存储新配置。由于它的执行方式，我们只在移动第一个哈希槽时需要一个新的configEpoch，这使得它在生产环境中更加高效。</p>
+<p>然而，由于上述两种情况，有可能（尽管不太可能）出现具有相同configEpoch的多个节点。系统管理员执行的重新分片操作以及同时发生的故障转移（加上很多坏运气）如果传播速度不够快，可能会导致currentEpoch冲突。</p>
+<p>此外，软件错误和文件系统损坏也可能导致出现具有相同configEpoch的多个节点。</p>
+<p>当服务于不同哈希槽的主服务器具有相同的configEpoch时，这不是问题。更重要的是，故障转移主节点的从节点需要有唯一的configEpoch。</p>
+<p>也就是说，手动干预或重新分配可能会以不同方式更改群集配置。 Redis集群的活动属性要求哈希槽配置最终收敛，因此在任何情况下我们都希望所有主节点都具有不同的configEpoch。</p>
+<p>为了保证此规则，当两个节点出现相同的configEpoch时使用如下<strong>冲突解决算法</strong>。</p>
+<ul>
+<li><p>如果主节点检测到另一个主节点正在使用相同的configEpoch。</p>
+</li>
+<li><p>并且如果节点具有按字典顺序排序更小的节点ID</p>
+</li>
+<li><p>然后它将currentEpoch增加1，并将其用作新的configEpoch。</p>
+</li>
+</ul>
+<p>如果有任何一组节点具有相同的configEpoch，那么除节点ID最大的节点之外的所有节点都将向前移动，从而保证每个节点最终将选择一个唯一的configEpoch，而不管发生了什么。</p>
+<p>这个机制还保证在创建一个新的集群之后，所有节点都以不同的configEpoch开始（即使实际上没有使用它），因为redis-trib确保在启动时使用CONFIG SET-CONFIG-EPOCH。但是，如果由于某种原因导致节点配置错误，它将自动将其配置更新为不同的configEpoch。</p>
+<h3 id="节点重置"><a href="#节点重置" class="headerlink" title="节点重置"></a>节点重置</h3><p>节点可以通过软件重置（无需重新启动），以便在不同的角色或不同的集群中重复使用。这在正常操作，测试和云环境中非常有用，在这些环境中，可以重新配置给定节点以加入不同的集合以扩大或创建新集群。</p>
+<p>在Redis集群中，使用CLUSTER RESET命令重置节点。该命令有两种变体：</p>
+<ul>
+<li><p>CLUSTER RESET SOFT</p>
+</li>
+<li><p>CLUSTER RESET HARD</p>
+</li>
+</ul>
+<p>必须将命令直接发送到节点才能重置。如果未提供重置类型，则执行软重置。</p>
+<p>以下是重置的操作步骤：</p>
+<ol>
+<li><p>如果节点是从节点，则将其转换为主节点，并丢弃其数据集。如果节点是主节点并包含键，则重置操作将中止。</p>
+</li>
+<li><p>释放所有哈希槽，重置手工故障切换状态。</p>
+</li>
+<li><p>节点表中的所有其他节点都被删除，因此节点不再知道任何其他节点。</p>
+</li>
+<li><p>currentEpoch，configEpoch和lastVoteEpoch设置为0。</p>
+</li>
+<li><p>节点ID更改为新的随机ID。</p>
+</li>
+</ol>
+<p>无法重置具有非空数据集的主节点（因为通常需要将数据重分片到其他节点）。但是，在适当的特殊条件下（例如，当为了创建新集群而完全销毁集群时），必须在继续重置之前执行<a href="https://redis.io/commands/flushall" target="_blank" rel="noopener">FLUSHALL</a>。</p>
+<h3 id="节点移除"><a href="#节点移除" class="headerlink" title="节点移除"></a>节点移除</h3><p>通过将其所有数据重新分配给其他节点（如果它是主节点）并将其下线，实际上可以从现有集群中删除节点。但是，其他节点仍将记住其节点ID和地址，并将尝试与其连接。</p>
+<p>因此，当删除节点时，我们还希望从所有其他节点表中删除其条目。这是通过使用<strong>CLUSTER FORGET \<node-id></node-id></strong>命令完成的。</p>
+<p>该命令有两个作用：</p>
+<ol>
+<li><p>它从节点表中删除具有指定节点ID的节点。</p>
+</li>
+<li><p>它设置了60秒禁止，以防止重新添加具有相同节点ID的节点。</p>
+</li>
+</ol>
+<p>第二个操作是必需的，因为Redis Cluster使用Gossip协议来自动发现节点，因此从节点A移除节点X可能导致节点B再次将节点X传播到A节点。由于禁止60秒，Redis集群管理工具有60秒的时间从所有节点中删除节点，避免由于自动发现而重新添加节点。</p>
+<p>有关详细信息，请参阅<a href="https://redis.io/commands/cluster-forget" target="_blank" rel="noopener">CLUSTER FORGET</a>文档。</p>
+<h2 id="发布-订阅"><a href="#发布-订阅" class="headerlink" title="发布/订阅"></a>发布/订阅</h2><p>在Redis群集中，客户端可以订阅每个节点，也可以发布到每个其他节点。 集群将确保根据需要转发已发布的消息。</p>
+<p>当前的实现将简单地将每个已发布的消息广播到所有其他节点，将来可能使用Bloom过滤器或其他算法优化。</p>
+<h2 id="附录"><a href="#附录" class="headerlink" title="附录"></a>附录</h2><p>附录A：CRC16的ANSI C参考实现</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment"> * Copyright 2001-2010 Georges Menie (www.menie.org)</span></span><br><span class="line"><span class="comment"> * Copyright 2010 Salvatore Sanfilippo (adapted to Redis coding style)</span></span><br><span class="line"><span class="comment"> * All rights reserved.</span></span><br><span class="line"><span class="comment"> * Redistribution and use in source and binary forms, with or without</span></span><br><span class="line"><span class="comment"> * modification, are permitted provided that the following conditions are met:</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> *     * Redistributions of source code must retain the above copyright</span></span><br><span class="line"><span class="comment"> *       notice, this list of conditions and the following disclaimer.</span></span><br><span class="line"><span class="comment"> *     * Redistributions in binary form must reproduce the above copyright</span></span><br><span class="line"><span class="comment"> *       notice, this list of conditions and the following disclaimer in the</span></span><br><span class="line"><span class="comment"> *       documentation and/or other materials provided with the distribution.</span></span><br><span class="line"><span class="comment"> *     * Neither the name of the University of California, Berkeley nor the</span></span><br><span class="line"><span class="comment"> *       names of its contributors may be used to endorse or promote products</span></span><br><span class="line"><span class="comment"> *       derived from this software without specific prior written permission.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND ANY</span></span><br><span class="line"><span class="comment"> * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED</span></span><br><span class="line"><span class="comment"> * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE</span></span><br><span class="line"><span class="comment"> * DISCLAIMED. IN NO EVENT SHALL THE REGENTS AND CONTRIBUTORS BE LIABLE FOR ANY</span></span><br><span class="line"><span class="comment"> * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES</span></span><br><span class="line"><span class="comment"> * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;</span></span><br><span class="line"><span class="comment"> * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND</span></span><br><span class="line"><span class="comment"> * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT</span></span><br><span class="line"><span class="comment"> * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS</span></span><br><span class="line"><span class="comment"> * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/* CRC16 implementation according to CCITT standards.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * Note by @antirez: this is actually the XMODEM CRC 16 algorithm, using the</span></span><br><span class="line"><span class="comment"> * following parameters:</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * Name                       : "XMODEM", also known as "ZMODEM", "CRC-16/ACORN"</span></span><br><span class="line"><span class="comment"> * Width                      : 16 bit</span></span><br><span class="line"><span class="comment"> * Poly                       : 1021 (That is actually x^16 + x^12 + x^5 + 1)</span></span><br><span class="line"><span class="comment"> * Initialization             : 0000</span></span><br><span class="line"><span class="comment"> * Reflect Input byte         : False</span></span><br><span class="line"><span class="comment"> * Reflect Output CRC         : False</span></span><br><span class="line"><span class="comment"> * Xor constant to output CRC : 0000</span></span><br><span class="line"><span class="comment"> * Output for "123456789"     : 31C3</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">static</span> <span class="keyword">const</span> <span class="keyword">uint16_t</span> crc16tab[<span class="number">256</span>]= &#123;</span><br><span class="line">    <span class="number">0x0000</span>,<span class="number">0x1021</span>,<span class="number">0x2042</span>,<span class="number">0x3063</span>,<span class="number">0x4084</span>,<span class="number">0x50a5</span>,<span class="number">0x60c6</span>,<span class="number">0x70e7</span>,</span><br><span class="line">    <span class="number">0x8108</span>,<span class="number">0x9129</span>,<span class="number">0xa14a</span>,<span class="number">0xb16b</span>,<span class="number">0xc18c</span>,<span class="number">0xd1ad</span>,<span class="number">0xe1ce</span>,<span class="number">0xf1ef</span>,</span><br><span class="line">    <span class="number">0x1231</span>,<span class="number">0x0210</span>,<span class="number">0x3273</span>,<span class="number">0x2252</span>,<span class="number">0x52b5</span>,<span class="number">0x4294</span>,<span class="number">0x72f7</span>,<span class="number">0x62d6</span>,</span><br><span class="line">    <span class="number">0x9339</span>,<span class="number">0x8318</span>,<span class="number">0xb37b</span>,<span class="number">0xa35a</span>,<span class="number">0xd3bd</span>,<span class="number">0xc39c</span>,<span class="number">0xf3ff</span>,<span class="number">0xe3de</span>,</span><br><span class="line">    <span class="number">0x2462</span>,<span class="number">0x3443</span>,<span class="number">0x0420</span>,<span class="number">0x1401</span>,<span class="number">0x64e6</span>,<span class="number">0x74c7</span>,<span class="number">0x44a4</span>,<span class="number">0x5485</span>,</span><br><span class="line">    <span class="number">0xa56a</span>,<span class="number">0xb54b</span>,<span class="number">0x8528</span>,<span class="number">0x9509</span>,<span class="number">0xe5ee</span>,<span class="number">0xf5cf</span>,<span class="number">0xc5ac</span>,<span class="number">0xd58d</span>,</span><br><span class="line">    <span class="number">0x3653</span>,<span class="number">0x2672</span>,<span class="number">0x1611</span>,<span class="number">0x0630</span>,<span class="number">0x76d7</span>,<span class="number">0x66f6</span>,<span class="number">0x5695</span>,<span class="number">0x46b4</span>,</span><br><span class="line">    <span class="number">0xb75b</span>,<span class="number">0xa77a</span>,<span class="number">0x9719</span>,<span class="number">0x8738</span>,<span class="number">0xf7df</span>,<span class="number">0xe7fe</span>,<span class="number">0xd79d</span>,<span class="number">0xc7bc</span>,</span><br><span class="line">    <span class="number">0x48c4</span>,<span class="number">0x58e5</span>,<span class="number">0x6886</span>,<span class="number">0x78a7</span>,<span class="number">0x0840</span>,<span class="number">0x1861</span>,<span class="number">0x2802</span>,<span class="number">0x3823</span>,</span><br><span class="line">    <span class="number">0xc9cc</span>,<span class="number">0xd9ed</span>,<span class="number">0xe98e</span>,<span class="number">0xf9af</span>,<span class="number">0x8948</span>,<span class="number">0x9969</span>,<span class="number">0xa90a</span>,<span class="number">0xb92b</span>,</span><br><span class="line">    <span class="number">0x5af5</span>,<span class="number">0x4ad4</span>,<span class="number">0x7ab7</span>,<span class="number">0x6a96</span>,<span class="number">0x1a71</span>,<span class="number">0x0a50</span>,<span class="number">0x3a33</span>,<span class="number">0x2a12</span>,</span><br><span class="line">    <span class="number">0xdbfd</span>,<span class="number">0xcbdc</span>,<span class="number">0xfbbf</span>,<span class="number">0xeb9e</span>,<span class="number">0x9b79</span>,<span class="number">0x8b58</span>,<span class="number">0xbb3b</span>,<span class="number">0xab1a</span>,</span><br><span class="line">    <span class="number">0x6ca6</span>,<span class="number">0x7c87</span>,<span class="number">0x4ce4</span>,<span class="number">0x5cc5</span>,<span class="number">0x2c22</span>,<span class="number">0x3c03</span>,<span class="number">0x0c60</span>,<span class="number">0x1c41</span>,</span><br><span class="line">    <span class="number">0xedae</span>,<span class="number">0xfd8f</span>,<span class="number">0xcdec</span>,<span class="number">0xddcd</span>,<span class="number">0xad2a</span>,<span class="number">0xbd0b</span>,<span class="number">0x8d68</span>,<span class="number">0x9d49</span>,</span><br><span class="line">    <span class="number">0x7e97</span>,<span class="number">0x6eb6</span>,<span class="number">0x5ed5</span>,<span class="number">0x4ef4</span>,<span class="number">0x3e13</span>,<span class="number">0x2e32</span>,<span class="number">0x1e51</span>,<span class="number">0x0e70</span>,</span><br><span class="line">    <span class="number">0xff9f</span>,<span class="number">0xefbe</span>,<span class="number">0xdfdd</span>,<span class="number">0xcffc</span>,<span class="number">0xbf1b</span>,<span class="number">0xaf3a</span>,<span class="number">0x9f59</span>,<span class="number">0x8f78</span>,</span><br><span class="line">    <span class="number">0x9188</span>,<span class="number">0x81a9</span>,<span class="number">0xb1ca</span>,<span class="number">0xa1eb</span>,<span class="number">0xd10c</span>,<span class="number">0xc12d</span>,<span class="number">0xf14e</span>,<span class="number">0xe16f</span>,</span><br><span class="line">    <span class="number">0x1080</span>,<span class="number">0x00a1</span>,<span class="number">0x30c2</span>,<span class="number">0x20e3</span>,<span class="number">0x5004</span>,<span class="number">0x4025</span>,<span class="number">0x7046</span>,<span class="number">0x6067</span>,</span><br><span class="line">    <span class="number">0x83b9</span>,<span class="number">0x9398</span>,<span class="number">0xa3fb</span>,<span class="number">0xb3da</span>,<span class="number">0xc33d</span>,<span class="number">0xd31c</span>,<span class="number">0xe37f</span>,<span class="number">0xf35e</span>,</span><br><span class="line">    <span class="number">0x02b1</span>,<span class="number">0x1290</span>,<span class="number">0x22f3</span>,<span class="number">0x32d2</span>,<span class="number">0x4235</span>,<span class="number">0x5214</span>,<span class="number">0x6277</span>,<span class="number">0x7256</span>,</span><br><span class="line">    <span class="number">0xb5ea</span>,<span class="number">0xa5cb</span>,<span class="number">0x95a8</span>,<span class="number">0x8589</span>,<span class="number">0xf56e</span>,<span class="number">0xe54f</span>,<span class="number">0xd52c</span>,<span class="number">0xc50d</span>,</span><br><span class="line">    <span class="number">0x34e2</span>,<span class="number">0x24c3</span>,<span class="number">0x14a0</span>,<span class="number">0x0481</span>,<span class="number">0x7466</span>,<span class="number">0x6447</span>,<span class="number">0x5424</span>,<span class="number">0x4405</span>,</span><br><span class="line">    <span class="number">0xa7db</span>,<span class="number">0xb7fa</span>,<span class="number">0x8799</span>,<span class="number">0x97b8</span>,<span class="number">0xe75f</span>,<span class="number">0xf77e</span>,<span class="number">0xc71d</span>,<span class="number">0xd73c</span>,</span><br><span class="line">    <span class="number">0x26d3</span>,<span class="number">0x36f2</span>,<span class="number">0x0691</span>,<span class="number">0x16b0</span>,<span class="number">0x6657</span>,<span class="number">0x7676</span>,<span class="number">0x4615</span>,<span class="number">0x5634</span>,</span><br><span class="line">    <span class="number">0xd94c</span>,<span class="number">0xc96d</span>,<span class="number">0xf90e</span>,<span class="number">0xe92f</span>,<span class="number">0x99c8</span>,<span class="number">0x89e9</span>,<span class="number">0xb98a</span>,<span class="number">0xa9ab</span>,</span><br><span class="line">    <span class="number">0x5844</span>,<span class="number">0x4865</span>,<span class="number">0x7806</span>,<span class="number">0x6827</span>,<span class="number">0x18c0</span>,<span class="number">0x08e1</span>,<span class="number">0x3882</span>,<span class="number">0x28a3</span>,</span><br><span class="line">    <span class="number">0xcb7d</span>,<span class="number">0xdb5c</span>,<span class="number">0xeb3f</span>,<span class="number">0xfb1e</span>,<span class="number">0x8bf9</span>,<span class="number">0x9bd8</span>,<span class="number">0xabbb</span>,<span class="number">0xbb9a</span>,</span><br><span class="line">    <span class="number">0x4a75</span>,<span class="number">0x5a54</span>,<span class="number">0x6a37</span>,<span class="number">0x7a16</span>,<span class="number">0x0af1</span>,<span class="number">0x1ad0</span>,<span class="number">0x2ab3</span>,<span class="number">0x3a92</span>,</span><br><span class="line">    <span class="number">0xfd2e</span>,<span class="number">0xed0f</span>,<span class="number">0xdd6c</span>,<span class="number">0xcd4d</span>,<span class="number">0xbdaa</span>,<span class="number">0xad8b</span>,<span class="number">0x9de8</span>,<span class="number">0x8dc9</span>,</span><br><span class="line">    <span class="number">0x7c26</span>,<span class="number">0x6c07</span>,<span class="number">0x5c64</span>,<span class="number">0x4c45</span>,<span class="number">0x3ca2</span>,<span class="number">0x2c83</span>,<span class="number">0x1ce0</span>,<span class="number">0x0cc1</span>,</span><br><span class="line">    <span class="number">0xef1f</span>,<span class="number">0xff3e</span>,<span class="number">0xcf5d</span>,<span class="number">0xdf7c</span>,<span class="number">0xaf9b</span>,<span class="number">0xbfba</span>,<span class="number">0x8fd9</span>,<span class="number">0x9ff8</span>,</span><br><span class="line">    <span class="number">0x6e17</span>,<span class="number">0x7e36</span>,<span class="number">0x4e55</span>,<span class="number">0x5e74</span>,<span class="number">0x2e93</span>,<span class="number">0x3eb2</span>,<span class="number">0x0ed1</span>,<span class="number">0x1ef0</span></span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="keyword">uint16_t</span> crc16(<span class="keyword">const</span> <span class="keyword">char</span> *buf, <span class="keyword">int</span> len) &#123;</span><br><span class="line">    <span class="keyword">int</span> counter;</span><br><span class="line">    <span class="keyword">uint16_t</span> crc = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">for</span> (counter = <span class="number">0</span>; counter &lt; len; counter++)</span><br><span class="line">            crc = (crc&lt;&lt;<span class="number">8</span>) ^ crc16tab[((crc&gt;&gt;<span class="number">8</span>) ^ *buf++)&amp;<span class="number">0x00FF</span>];</span><br><span class="line">    <span class="keyword">return</span> crc;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 <p>本文链接 <a href="http://yexingzhe54.github.io/passages/redis-cluster-specification/">http://yexingzhe54.github.io/passages/redis-cluster-specification/</a> </p>
 
     </div>

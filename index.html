@@ -188,6 +188,93 @@ var _hmt = _hmt || [];
   
   <div class="post">
     <h1 class="article-title">
+      <a href="/passages/golang-memory-leak-failure/">
+        <span>golang-memory-leak-failure</span>
+      </a>
+    </h1>
+    <!-- PC端文章信息 -->
+    <div class="article-top-meta pc-view">
+      <span>
+        发布时间 : 2019-06-26
+      </span>
+    </div>
+    <!-- 移动端文章信息 -->
+    <div class="article-top-meta mobile-view">
+      <span>
+        发布 : 2019-06-26
+      </span>
+      
+        <span>
+        分类 :
+          <a href="/categories/技术/">
+            技术
+          </a>
+        </span>
+      
+      
+    </div>
+    
+    <!-- 文章简介 -->
+    <div class="article-content">
+      <div class="markdown-body article-content--inner" v-html="mdToHtml(psg.summary)">
+        一次不成功的Golang内存溢出排查
+我们的监控服务是以Prometheus加K8S为基础搭建的，运行一段时间后出现了内存溢出的现象，内存RSS占用高达9G，CPU占用60%。以下是整理的排查思路
+
+PProf排查：
+我们先查看了应用日志，这些日志内容不断重复，有一定规律，但是当时暂时没有发现特别之处。
+
+
+
+接下来，针对Go应用的内存泄露问题，想到了通过官方PProf工具收集应用信息。幸好，Prometheus开启了PProf接口，因此我们可以很方便的得到协程与内存信息。具体过程不表，结果如下：
+
+部分协程信息如下：
+
+
+
+部分内存信息如下：
+
+
+
+分析协程
+我们发现协程数量达到了恐怖的30
+      </div>
+    </div>
+    <div class="article-footer">
+      <div class="article-meta pull-left">
+        <!-- 分类pc端可见 -->
+        <span class="pc-view">
+          
+            <i class="iconfont icon-tag"></i>分类:
+            <a href="/categories/技术/">
+              技术
+            </a>
+          </span>
+          
+        <span>
+          
+            <i class="iconfont icon-06tags"></i>标签:
+            
+              <span class="span--tag">
+                <a href="/tags/Golang/">
+                  #Golang
+                </a>
+              </span>
+            
+              <span class="span--tag">
+                <a href="/tags/MemoryLeak/">
+                  #MemoryLeak
+                </a>
+              </span>
+            
+                    
+        </span>
+      </div>
+      
+    </div>
+  </div>
+  
+  <div class="post">
+    <h1 class="article-title">
       <a href="/passages/redis-cluster-specification/">
         <span>redis-cluster-specification</span>
       </a>

@@ -188,6 +188,104 @@ var _hmt = _hmt || [];
   
   <div class="post">
     <h1 class="article-title">
+      <a href="/passages/java-nio-wakeup-trick/">
+        <span>java-nio-wakeup-trick</span>
+      </a>
+    </h1>
+    <!-- PC端文章信息 -->
+    <div class="article-top-meta pc-view">
+      <span>
+        发布时间 : 2019-07-01
+      </span>
+    </div>
+    <!-- 移动端文章信息 -->
+    <div class="article-top-meta mobile-view">
+      <span>
+        发布 : 2019-07-01
+      </span>
+      
+        <span>
+        分类 :
+          <a href="/categories/技术/">
+            技术
+          </a>
+        </span>
+      
+      
+    </div>
+    
+    <!-- 文章简介 -->
+    <div class="article-content">
+      <div class="markdown-body article-content--inner" v-html="mdToHtml(psg.summary)">
+        探索NIO wakeup内部原理
+最近在重新梳理对Kafka的知识，看一遍源码加深印象。源码实现中，Kafka的客户端与服务端都是基于Java NIO机制提高网络IO的效率（当然，这不是唯一因素）。
+
+这里就不再重复说明阻塞/非阻塞，同步/异步IO模型之间的区别了，也不赘述非阻塞IO在不同平台上的实现，例如select，epoll，kqueue等，这些都可以在网络上找到很丰富的文档以及示例。
+
+wakeup 接口
+Java NIO里面，我觉得蛮有意思的是这么一个接口，蛮trick的：
+
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+
+
+ 
+      </div>
+    </div>
+    <div class="article-footer">
+      <div class="article-meta pull-left">
+        <!-- 分类pc端可见 -->
+        <span class="pc-view">
+          
+            <i class="iconfont icon-tag"></i>分类:
+            <a href="/categories/技术/">
+              技术
+            </a>
+          </span>
+          
+        <span>
+          
+            <i class="iconfont icon-06tags"></i>标签:
+            
+              <span class="span--tag">
+                <a href="/tags/Java/">
+                  #Java
+                </a>
+              </span>
+            
+              <span class="span--tag">
+                <a href="/tags/NIO/">
+                  #NIO
+                </a>
+              </span>
+            
+                    
+        </span>
+      </div>
+      
+    </div>
+  </div>
+  
+  <div class="post">
+    <h1 class="article-title">
       <a href="/passages/golang-memory-leak-failure/">
         <span>golang-memory-leak-failure</span>
       </a>

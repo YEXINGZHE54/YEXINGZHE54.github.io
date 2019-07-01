@@ -8,12 +8,12 @@
   
   
   
-  <title>golang-memory-leak-failure | 鱼的记忆</title>
+  <title>java-nio-wakeup-trick | 鱼的记忆</title>
 
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 
   
-    <meta name="keywords" content="技术,Golang,Golang,MemoryLeak,">
+    <meta name="keywords" content="技术,Java,NIO,">
   
 
   <script>
@@ -198,12 +198,12 @@ var _hmt = _hmt || [];
 
 <div class="post">
   <h1 class="article-title">
-    <span>golang-memory-leak-failure</span>
+    <span>java-nio-wakeup-trick</span>
   </h1>
   <div class="article-top-meta">
     <span>
       发布 : 
-      2019-06-26
+      2019-07-01
     </span>
     
       <span>
@@ -220,48 +220,23 @@ var _hmt = _hmt || [];
 
   <div class="article-content">
     <div class="markdown-body">
-      <h1 id="一次不成功的Golang内存溢出排查"><a href="#一次不成功的Golang内存溢出排查" class="headerlink" title="一次不成功的Golang内存溢出排查"></a>一次不成功的Golang内存溢出排查</h1><p>我们的监控服务是以Prometheus加K8S为基础搭建的，运行一段时间后出现了内存溢出的现象，内存RSS占用高达9G，CPU占用60%。以下是整理的排查思路</p>
-<h2 id="PProf排查："><a href="#PProf排查：" class="headerlink" title="PProf排查："></a>PProf排查：</h2><p>我们先查看了应用日志，这些日志内容不断重复，有一定规律，但是当时暂时没有发现特别之处。</p>
-<p><img src="/images/memleak-log.png" alt="memleak-log"></p>
-<p>接下来，针对Go应用的内存泄露问题，想到了通过官方PProf工具收集应用信息。幸好，Prometheus开启了PProf接口，因此我们可以很方便的得到协程与内存信息。具体过程不表，结果如下：</p>
-<p>部分协程信息如下：</p>
-<p><img src="/images/memleak-routines.png" alt="memleak-routines"></p>
-<p>部分内存信息如下：</p>
-<p><img src="/images/memleak-memories.png" alt="memleak-memories"></p>
-<h2 id="分析协程"><a href="#分析协程" class="headerlink" title="分析协程"></a>分析协程</h2><p>我们发现协程数量达到了恐怖的30万个，而且其中有10万处在调用K8S的POD API上，另外还有20万分别是SERVICE API和ENDPOINT API没有在图中列出。接着，再查看了容器环境（Prometheus运行在容器网络中）中与K8S API通信的连接个数，很少，只有一个。</p>
-<p>我们知道，K8S API基于gRPC协议通信，GRPC又是基于HTTP2协议，支持在一个TCP连接上多路复用多个请求流。因此，只用少数连接就可以同时处理多个请求，这是没问题的。但是现在只有一个连接，这就有点诡异了，一般HTTP2对于最大并发请求数是有限制的，需要客户端与服务端协商，服务端不会允许这么大的单连接并发。</p>
-<p>于是，我们顺着协程栈，逐个翻看相关代码，具体细节不表。从代码中了解到Go HTTP2库对最大并发数的默认限制为1000，超出部分将会等待，也就是说，在某种特殊情况下TCP连接上的等待处理请求数量超过了最大限制，导致后续的类似协程都阻塞在条件变量上，并且呈不断增长的趋势。</p>
-<p>因此，协程问题变成了两个子问题：</p>
-<ol>
-<li>什么情况下，会导致待处理请求数超限</li>
-<li>不断增长的协程，是如何触发的</li>
-</ol>
-<p>关于第一个问题，很遗憾没有找到原因，后来也没有复现。</p>
-<p>关于第二个问题，从前面的日志里面找到了一丝端倪。通过在代码里搜索日志内容的方式，我们定位到，不断重复的日志的源头来自于：</p>
-<p><img src="/images/memleak-code.png" alt="memleak-code"></p>
-<p>由于这段代码逻辑被反复执行，因此日志内容在不断重复输出。而更巧的是，这段代码所在函数还有另一部分功能，恰好就是启动新协程，<strong>通过K8S Client获取POD/SERVICE/ENDPOINT信息！</strong></p>
-<p>通过反向追述这段代码的调用源点，发现它会在Prometheus配置文件发生变化的时候被调用。</p>
-<p>最后得出部分结论，由于配置文件的频繁更新触发Prometheus的自动加载机制，因此协程数量不断增长。在环境稳定的情况下，配置文件不会频繁变更，因此协程问题得以解决。</p>
-<h2 id="分析内存"><a href="#分析内存" class="headerlink" title="分析内存"></a>分析内存</h2><p>我们先照图回顾一下Go应用的内存布局：</p>
-<figure class="highlight pascal"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Sys = HeapSys + StackSys + MspanSys + MCacheSys + BuckHashSys + GCSys + OtherSys</span><br></pre></td></tr></table></figure>
-<ul>
-<li><strong>Sys</strong> 代表了 RSS，也就是从操作系统的角度来看，Go进程（包括内部各个线程）总共占用的系统内存，也是此次关注的重点（9G）。从用途的角度来看，Go内存可以分为：堆，栈，内部数据结构，GC以及其他</li>
-</ul>
-<p>这里面比较有意思的是HeapSys和StackSys，其他就不介绍了。</p>
-<ul>
-<li><p><strong>HeapSys</strong> == HeapIdle + HeapInuse 代表了作为堆用途的内存空间。堆内存以Span为单元进行管理，从Span中分配内存给对象，分为Idle（没有分配对象）和Inuse（有对象）两种类型。</p>
-</li>
-<li><p><strong>HeapAlloc</strong> == Alloc 代表了堆上的未回收对象的实际占用空间（包括可回收部分）。注意，这和HeapInuse是有区别的。HeapInuse代表了分配对象的Span的大小，而HeapAlloc代表了实际对象的大小，因此可以认为一个是粗统计，一个是细统计，HeapAlloc &lt;= HeapInuse</p>
-</li>
-<li><p><strong>StackSys</strong> 代表协程栈大小，其实是Stack Span的大小，可以和Idle Span互相转换。不同版本Go语言的最小协程栈大小是不同的，这次问题里面的协程栈大小为8K，因此30万协程2.4G，和图中的Stack部分相符，但还不足以解释剩下6G的堆内存占用量。</p>
-</li>
-</ul>
-<p>从图中可以看出，6G堆内存中有接近1G处于Idle，剩下5G左右的实际对象占用量。</p>
-<p>注意到堆上分配了4千多万个对象，如果每个对象都120B，几乎就可以解释5G大小的内存开销了。联想到Prometheus需要将近期指标加载到内存中，如果短时间内累计大量指标，确实有可能会导致这样的情况发生。</p>
-<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>这次排查问题，还是有不完善之处。</p>
-<p>时间不够，也没有思路完整解决协程问题。</p>
-<p>对于指标过多的问题，解决方案只能是减少指标监控数据，治标不治本。</p>
-<p>本文链接 <a href="http://yexingzhe54.github.io/passages/golang-memory-leak-failure/">http://yexingzhe54.github.io/passages/golang-memory-leak-failure/</a> </p>
+      <h1 id="探索NIO-wakeup内部原理"><a href="#探索NIO-wakeup内部原理" class="headerlink" title="探索NIO wakeup内部原理"></a>探索NIO wakeup内部原理</h1><p>最近在重新梳理对Kafka的知识，看一遍源码加深印象。源码实现中，Kafka的客户端与服务端都是基于Java NIO机制提高网络IO的效率（当然，这不是唯一因素）。</p>
+<p>这里就不再重复说明阻塞/非阻塞，同步/异步IO模型之间的区别了，也不赘述非阻塞IO在不同平台上的实现，例如select，epoll，kqueue等，这些都可以在网络上找到很丰富的文档以及示例。</p>
+<h2 id="wakeup-接口"><a href="#wakeup-接口" class="headerlink" title="wakeup 接口"></a>wakeup 接口</h2><p>Java NIO里面，我觉得蛮有意思的是这么一个接口，蛮trick的：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"> <span class="comment">/**</span></span><br><span class="line"><span class="comment"> * Causes the first selection operation that has not yet returned to return</span></span><br><span class="line"><span class="comment"> * immediately.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * &lt;p&gt; If another thread is currently blocked in an invocation of the</span></span><br><span class="line"><span class="comment"> * &#123;<span class="doctag">@link</span> #select()&#125; or &#123;<span class="doctag">@link</span> #select(long)&#125; methods then that invocation</span></span><br><span class="line"><span class="comment"> * will return immediately.  If no selection operation is currently in</span></span><br><span class="line"><span class="comment"> * progress then the next invocation of one of these methods will return</span></span><br><span class="line"><span class="comment"> * immediately unless the &#123;<span class="doctag">@link</span> #selectNow()&#125; method is invoked in the</span></span><br><span class="line"><span class="comment"> * meantime.  In any case the value returned by that invocation may be</span></span><br><span class="line"><span class="comment"> * non-zero.  Subsequent invocations of the &#123;<span class="doctag">@link</span> #select()&#125; or &#123;<span class="doctag">@link</span></span></span><br><span class="line"><span class="comment"> * #select(long)&#125; methods will block as usual unless this method is invoked</span></span><br><span class="line"><span class="comment"> * again in the meantime.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * &lt;p&gt; Invoking this method more than once between two successive selection</span></span><br><span class="line"><span class="comment"> * operations has the same effect as invoking it just once.  &lt;/p&gt;</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@return</span>  This selector</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">abstract</span> Selector <span class="title">wakeup</span><span class="params">()</span></span>;</span><br></pre></td></tr></table></figure>
+<p>从上面的注释可以看出，这个接口可以立刻中断正在执行的select()调用，或者接下来第一次被调用的select()调用。</p>
+<p>这么神奇？我印象中的非阻塞实现好像不支持“唤醒”功能，Java NIO是怎么做到的？</p>
+<p>本着好学求知的精神，我转向Google寻求帮助，终于在StackOverflow上找到了一个相似的问题：</p>
+<p><a href="https://stackoverflow.com/questions/2244466/interrupting-epoll-wait-with-a-non-io-event-no-signals" target="_blank" rel="noopener">如何在没有IO事件时中断epoll_wait</a></p>
+<p>里面提到了一个技巧：<a href="http://cr.yp.to/docs/selfpipe.html" target="_blank" rel="noopener">self-pipe</a>，通过管道文件IO的方式唤醒确实是可以做到的，JDK源码也证实了这一点。</p>
+<h2 id="源码验证"><a href="#源码验证" class="headerlink" title="源码验证"></a>源码验证</h2><p><img src="/images/java-nio-wakeup-flow.png" alt="java-nio-wakeup-flow"></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">interrupt</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    interrupt(<span class="keyword">this</span>.interruptFD);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">private</span> <span class="keyword">native</span> <span class="keyword">int</span> <span class="title">poll0</span><span class="params">(<span class="keyword">long</span> var1, <span class="keyword">int</span> var3, <span class="keyword">long</span> var4)</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">native</span> <span class="keyword">void</span> <span class="title">interrupt</span><span class="params">(<span class="keyword">int</span> var0)</span></span>;</span><br></pre></td></tr></table></figure>
+<p>从图中可以看出，最终的wakeup调用了类sun.nio.ch.PollArrayWrapper的interrupt本地方法。</p>
+<p>进一步，我们找到了这个本地方法的具体C语言实现，具体定义在src/linux/native/sun/nio/ch/PollArrayWrapper.c文件中：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">JNIEXPORT <span class="keyword">void</span> JNICALL</span><br><span class="line">Java_sun_nio_ch_PollArrayWrapper_interrupt(JNIEnv *env, jobject <span class="keyword">this</span>, jint fd)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">int</span> fakebuf[<span class="number">1</span>];</span><br><span class="line">    fakebuf[<span class="number">0</span>] = <span class="number">1</span>;</span><br><span class="line">    <span class="keyword">if</span> (write(fd, fakebuf, <span class="number">1</span>) &lt; <span class="number">0</span>) &#123;</span><br><span class="line">         JNU_ThrowIOExceptionWithLastError(env,</span><br><span class="line">                                          <span class="string">"Write to interrupt fd failed"</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>通过往管道FD中写入一个整数1的方式，触发了管道FD的可读事件，进而中断了NIO的select()调用。</p>
+<p>self-pipe 还是一个蛮有意思的trick。</p>
+<p>本文链接 <a href="http://yexingzhe54.github.io/passages/java-nio-wakeup-trick/">http://yexingzhe54.github.io/passages/java-nio-wakeup-trick/</a> </p>
 
     </div>
   </div>
@@ -273,7 +248,7 @@ var _hmt = _hmt || [];
         
           本文作者 : 比特鱼 <br>
         
-        原文链接 : <a href>http://yexingzhe54.github.io/passages/golang-memory-leak-failure/</a><br>
+        原文链接 : <a href>http://yexingzhe54.github.io/passages/java-nio-wakeup-trick/</a><br>
         版权声明 : 本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议。转载请注明出处！
         </blockquote>
       </div>
@@ -333,14 +308,14 @@ var _hmt = _hmt || [];
           <i class="iconfont icon-06tags"></i>标签: 
           
           <span class="span--tag">
-            <a href="/tags/Golang/">
-              #Golang
+            <a href="/tags/Java/">
+              #Java
             </a>
           </span>
           
           <span class="span--tag">
-            <a href="/tags/MemoryLeak/">
-              #MemoryLeak
+            <a href="/tags/NIO/">
+              #NIO
             </a>
           </span>
           
@@ -365,15 +340,9 @@ var _hmt = _hmt || [];
       <div class="nav-pre">
         <i class="iconfont icon-prev"></i>
         上一篇:
-        <a href="/passages/redis-cluster-specification/" target="_self">redis-cluster-specification</a>
+        <a href="/passages/golang-memory-leak-failure/" target="_self">golang-memory-leak-failure</a>
       </div>
     
-    
-      <div class="nav-next">
-        下一篇:
-        <a href="/passages/java-nio-wakeup-trick/" target="_self">java-nio-wakeup-trick</a>
-        <i class="iconfont icon-next"></i>
-      </div>
     
   </nav>
 

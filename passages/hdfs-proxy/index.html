@@ -8,12 +8,12 @@
   
   
   
-  <title>分类: Golang | 鱼的记忆</title>
+  <title>hdfs-proxy | 鱼的记忆</title>
 
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 
   
-    <meta name="keywords" content>
+    <meta name="keywords" content="技术,Java,Hadoop,Java,大数据,">
   
 
   <script>
@@ -183,79 +183,225 @@ var _hmt = _hmt || [];
   })
 </script>
 
-      <div class="container">
-  <div class="timeline">
-  <span class="archive-move-on"></span>
-  <span class="archive-page-counter">
-    
-      <span>当前位于 1/1 页</span>
-    
-  </span>
+      
+
+
+
+
+
+
+
+
+<div class="container post-index">
+
   
+
+<div class="post">
+  <h1 class="article-title">
+    <span>hdfs-proxy</span>
+  </h1>
+  <div class="article-top-meta">
+    <span>
+      发布 : 
+      2019-12-23
+    </span>
+    
+      <span>
+        分类 : 
+          <a href="/categories/技术/">
+            技术
+          </a>
+      </span>
+    
+    
+  </div>
+
   
-    <div class="collection-title">
-      <h2>
+
+  <div class="article-content">
+    <div class="markdown-body">
+      <h1 id="HDFS-Proxy-技术梳理"><a href="#HDFS-Proxy-技术梳理" class="headerlink" title="HDFS-Proxy 技术梳理"></a>HDFS-Proxy 技术梳理</h1><h2 id="问题背景"><a href="#问题背景" class="headerlink" title="问题背景"></a>问题背景</h2><p>来自某个需求，希望数据平台可以支持多个不同版本不同认证方式的Hadoop集群。</p>
+<p>由于Kerberos的认证是进程级别有效的，因此无法在多线程环境下支持对多Hadoop集群的访问支持。</p>
+<p>为了解决多个模块对HDFS的访问需求，因此设计HDFS Proxy模块，透明无侵入地解决这个问题。</p>
+<h2 id="设计目标（按重要性排序）"><a href="#设计目标（按重要性排序）" class="headerlink" title="设计目标（按重要性排序）"></a>设计目标（按重要性排序）</h2><ol>
+<li>兼容FileSystem接口，尽量减少接入方的改动成本</li>
+<li>保证性能，减少Proxy环节的性能损耗</li>
+<li>可扩展性，对于集群数量与流量负载都能保持线性可扩展</li>
+<li>完整的Log/Tracing/Metrics信息，减少服务运行状态的不透明</li>
+<li>保持异常信息，在客户端还原服务端捕获到的异常</li>
+<li>不保证线程安全，虽然有一定的锁保护，但不支持多线程同时访问一个FS实例</li>
+</ol>
+<h2 id="实现功能"><a href="#实现功能" class="headerlink" title="实现功能"></a>实现功能</h2><h3 id="1-SDK"><a href="#1-SDK" class="headerlink" title="1. SDK"></a>1. SDK</h3><ul>
+<li><p>作为一个Jar包集成在模块中，实现HDFS FileSystem接口，使得模块可以透明对接多个HDFS集群</p>
+</li>
+<li><p>从请求上下文中获取HDFS集群ID，实现基于HDFS 集群ID的Proxy服务发现</p>
+</li>
+<li>反序列化异常栈，正确抛出异常</li>
+</ul>
+<h3 id="2-Proxy"><a href="#2-Proxy" class="headerlink" title="2. Proxy"></a>2. Proxy</h3><ul>
+<li>代理对单个HDFS集群的接口访问</li>
+<li>实现基于HDFS集群ID的服务注册</li>
+<li>基于Session的资源回收，避免由于客户端崩溃/网络故障等原因导致服务端资源泄露</li>
+<li>捕捉并序列化异常，回传到SDK</li>
+</ul>
+<h2 id="设计思路与折衷"><a href="#设计思路与折衷" class="headerlink" title="设计思路与折衷"></a>设计思路与折衷</h2><ul>
+<li>接口兼容与代码入侵</li>
+</ul>
+<p>FileSystem接口支持通过配置文件的方式指定底层的实现类，保护了底层具体实现与上层代码的分离解耦。</p>
+<p>因此，只需要在配置文件中指定用SDK中的类作为FileSystem的实现，就可以启用Proxy，入侵比较小。</p>
+<ul>
+<li>RPC协议的性能</li>
+</ul>
+<ol>
+<li>REST接口，简单方便，文本便于阅读，也便于开发与测试</li>
+<li>gRPC协议，基于HTTP2+Protobuf3，性能良好</li>
+</ol>
+<p>选择gPRC协议</p>
+<ul>
+<li>可扩展性</li>
+</ul>
+<p>利用K8S提供的负载均衡机制，可以保证对请求负载的良好扩展性。</p>
+<p>利用K8S提供的服务发现机制，可以保证对接多个Hadoop集群的扩展性。</p>
+<ul>
+<li>Log/Tracing/Metrics支持</li>
+</ul>
+<p>gRPC协议支持OpenTracing，而Log与Metrics可以在SDK中添加</p>
+<ul>
+<li>异常信息还原</li>
+</ul>
+<p>为了能在客户端还原出服务端捕获的异常信息，我们需要将堆栈信息序列化传输到客户端，并在客户端反序列化</p>
+<ul>
+<li>超时资源回收</li>
+</ul>
+<p>Proxy服务端可以在后台运行一个GC线程定期进行资源回收，避免泄露</p>
+<ul>
+<li>优化</li>
+</ul>
+<p>Buffer可以提高读性能，流式接口可以适应大数据块，gRPC连接可以保持复用</p>
+<h2 id="其他"><a href="#其他" class="headerlink" title="其他"></a>其他</h2><p>与此相似，后来还补充实现了HiveProxy，在原有的框架基础上添加几个方法就可以了</p>
+<p>这里只记录大致思路，具体协议与代码细节就不细说了</p>
+<p>本文链接 <a href="http://yexingzhe54.github.io/passages/hdfs-proxy/">http://yexingzhe54.github.io/passages/hdfs-proxy/</a> </p>
+
+    </div>
+  </div>
+  
+    <div class="copy-right">
+      <div class="markdown-body">
+        <blockquote>
         
-          <span>分类 : Golang</span>
         
-      </h2>
+          本文作者 : 比特鱼 <br>
+        
+        原文链接 : <a href>http://yexingzhe54.github.io/passages/hdfs-proxy/</a><br>
+        版权声明 : 本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议。转载请注明出处！
+        </blockquote>
+      </div>
     </div>
   
   
   
-  <article class="posts-collapse">
-    <header>
-      <h2>
-        <a href="/passages/Golang的协程同步/">
-          <span>Golang的协程同步</span>
-        </a>
-      </h2>
-      <div class="post-meta">
-        01-26
-      </div>
-    </header>
-  </article>
-  
-  
-    <div class="collection-title">
-      <h2>
-        <span>2019</span>
-      </h2>
-    </div>
-  
-  <article class="posts-collapse">
-    <header>
-      <h2>
-        <a href="/passages/golang-memory-leak-failure/">
-          <span>golang-memory-leak-failure</span>
-        </a>
-      </h2>
-      <div class="post-meta">
-        06-26
-      </div>
-    </header>
-  </article>
-  
-  
-  <article class="posts-collapse">
-    <header>
-      <h2>
-        <a href="/passages/golang-http-client-time-wait/">
-          <span>golang-http-client-time-wait</span>
-        </a>
-      </h2>
-      <div class="post-meta">
-        04-16
-      </div>
-    </header>
-  </article>
-  
+    <div class="social-share" style="margin-top: -2rem" data-wechat-qrcode-title="<p>微信扫一扫</p>" data-wechat-qrcode-helper="<p>微信右上角, 扫一扫分享</p>" data-sites="qzone, qq, weibo, wechat, douban, google, facebook, twitter">
+  <span style="color: #6b7487; font-size: 1.4rem;">分享到: </span>
 </div>
-  <nav class="page-navigation">
+<script src="https://cdn.bootcss.com/social-share.js/1.0.16/js/social-share.min.js" async></script>
+  
+
+  
+    <div id="reward">
+  
+    <p id="reward-meta">知识 & 情怀 | 二者兼得</p>
+  
+  <button id="reward-btn">
     
+    <span>投食</span>
+  </button>
+  <div id="reward-qrcode">
+    
+      <div class="reward-qrcode--container">
+        <img class="qrcode-img" src="/images/wechat.png" alt="微信扫一扫, 向我投食">
+        <p class="qrcode-meta">微信扫一扫, 向我投食</p>
+      </div>
+    
+      <div class="reward-qrcode--container">
+        <img class="qrcode-img" src="/images/alipay.png" alt="支付宝扫一扫, 向我投食">
+        <p class="qrcode-meta">支付宝扫一扫, 向我投食</p>
+      </div>
+    
+  </div>
+
+</div>
+
+<script>
+  (() => {
+    let button = document.querySelector('#reward-btn'),
+      qrcode = document.querySelector('#reward-qrcode'),
+      display = false;
+    
+    button.addEventListener('click', () => {
+      qrcode.style.display = display ? 'none' : 'block'
+      display = !display
+    }, false)
+  })()
+</script>
+  
+
+  <div class="article-footer">
+    <div class="article-meta pull-left">
+      <span>
+        
+          <i class="iconfont icon-06tags"></i>标签: 
+          
+          <span class="span--tag">
+            <a href="/tags/Java/">
+              #Java
+            </a>
+          </span>
+          
+          <span class="span--tag">
+            <a href="/tags/大数据/">
+              #大数据
+            </a>
+          </span>
+          
+        
+      </span>
+    </div>
+    <div class="article-meta pull-right">
+    </div>
+  </div>
+</div>
+
+
+  <aside id="sidebar">
+    <p id="sidebar-header"></p>
+    <ol id="sidebar-toc"></ol>
+  </aside>
+  <script async>setTimeout(generateToc, 10);</script>
+
+
+  <nav class="post-navigation">
+    
+      <div class="nav-pre">
+        <i class="iconfont icon-prev"></i>
+        上一篇:
+        <a href="/passages/java-nio-wakeup-trick/" target="_self">java-nio-wakeup-trick</a>
+      </div>
+    
+    
+      <div class="nav-next">
+        下一篇:
+        <a href="/passages/Golang的协程同步/" target="_self">Golang的协程同步</a>
+        <i class="iconfont icon-next"></i>
+      </div>
     
   </nav>
+
+   
+
+   
+
 </div>
+
 
       <footer>
   <p class="site-info">

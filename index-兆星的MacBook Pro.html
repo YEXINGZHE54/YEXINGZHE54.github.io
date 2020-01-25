@@ -188,106 +188,6 @@ var _hmt = _hmt || [];
   
   <div class="post">
     <h1 class="article-title">
-      <a href="/passages/Golang的协程同步/">
-        <span>Golang的协程同步</span>
-      </a>
-    </h1>
-    <!-- PC端文章信息 -->
-    <div class="article-top-meta pc-view">
-      <span>
-        发布时间 : 2020-01-26
-      </span>
-    </div>
-    <!-- 移动端文章信息 -->
-    <div class="article-top-meta mobile-view">
-      <span>
-        发布 : 2020-01-26
-      </span>
-      
-        <span>
-        分类 :
-          <a href="/categories/技术/">
-            技术
-          </a>
-        </span>
-      
-      
-    </div>
-    
-    <!-- 文章简介 -->
-    <div class="article-content">
-      <div class="markdown-body article-content--inner" v-html="mdToHtml(psg.summary)">
-        问题背景
-最近遇到了一个BUG，由于对Golang的同步模型理解不够深入所导致的资源泄露。
-
-伪代码如下：
-
-1
-2
-3
-4
-5
-6
-7
-8
-9
-10
-11
-12
-13
-14
-15
-16
-
-
-var res Connection
-done := make(chan bool)
-go func(){
-	defer close(done)
-	res, err := acquire(200 * time.Millisecond) //计数器递增
-	if err != nil {
-		log.Printf("err: %v", err) //第7行，这里报错
-		return
-	}
-	doWork(r
-      </div>
-    </div>
-    <div class="article-footer">
-      <div class="article-meta pull-left">
-        <!-- 分类pc端可见 -->
-        <span class="pc-view">
-          
-            <i class="iconfont icon-tag"></i>分类:
-            <a href="/categories/技术/">
-              技术
-            </a>
-          </span>
-          
-        <span>
-          
-            <i class="iconfont icon-06tags"></i>标签:
-            
-              <span class="span--tag">
-                <a href="/tags/Golang/">
-                  #Golang
-                </a>
-              </span>
-            
-              <span class="span--tag">
-                <a href="/tags/内存模型/">
-                  #内存模型
-                </a>
-              </span>
-            
-                    
-        </span>
-      </div>
-      
-    </div>
-  </div>
-  
-  <div class="post">
-    <h1 class="article-title">
       <a href="/passages/hdfs-proxy/">
         <span>hdfs-proxy</span>
       </a>
@@ -1066,6 +966,92 @@ func Handle(w http.Res
               <span class="span--tag">
                 <a href="/tags/TIME-WAIT/">
                   #TIME_WAIT
+                </a>
+              </span>
+            
+                    
+        </span>
+      </div>
+      
+    </div>
+  </div>
+  
+  <div class="post">
+    <h1 class="article-title">
+      <a href="/passages/druid-connection-retry-loop-and-block/">
+        <span>druid-connection-retry-loop-and-block</span>
+      </a>
+    </h1>
+    <!-- PC端文章信息 -->
+    <div class="article-top-meta pc-view">
+      <span>
+        发布时间 : 2019-04-10
+      </span>
+    </div>
+    <!-- 移动端文章信息 -->
+    <div class="article-top-meta mobile-view">
+      <span>
+        发布 : 2019-04-10
+      </span>
+      
+        <span>
+        分类 :
+          <a href="/categories/技术/">
+            技术
+          </a>
+        </span>
+      
+      
+    </div>
+    
+    <!-- 文章简介 -->
+    <div class="article-content">
+      <div class="markdown-body article-content--inner" v-html="mdToHtml(psg.summary)">
+        Alibaba/Druid 无限次重试报错并阻塞业务线程
+Alibaba/Druid 是一个广受欢迎的开源数据库连接池组件。但是，由于配置不当，也会对服务稳定性产生负面影响。
+
+我们的某个服务提供了一个功能，可以帮助用户随机预览给定数据源上的表数据。但是，当用户提供了错误的IP/Port信息，或者错误的授权信息，或者错误的数据库协议的时候，服务接口未能及时响应，最后网关报504超时，影响用户体验。
+
+查看日志
+为了优化这个环节，我们先查看了应用的异常日志，发现应用仍然在不断的抛出连接失败的异常，并且，抛出异常的线程不是HTTP Worker线程，而是名为Druid-ConnectionPool
+      </div>
+    </div>
+    <div class="article-footer">
+      <div class="article-meta pull-left">
+        <!-- 分类pc端可见 -->
+        <span class="pc-view">
+          
+            <i class="iconfont icon-tag"></i>分类:
+            <a href="/categories/技术/">
+              技术
+            </a>
+          </span>
+          
+        <span>
+          
+            <i class="iconfont icon-06tags"></i>标签:
+            
+              <span class="span--tag">
+                <a href="/tags/Java/">
+                  #Java
+                </a>
+              </span>
+            
+              <span class="span--tag">
+                <a href="/tags/Debug/">
+                  #Debug
+                </a>
+              </span>
+            
+              <span class="span--tag">
+                <a href="/tags/Druid/">
+                  #Druid
+                </a>
+              </span>
+            
+              <span class="span--tag">
+                <a href="/tags/Block/">
+                  #Block
                 </a>
               </span>
             

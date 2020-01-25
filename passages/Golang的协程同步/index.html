@@ -8,12 +8,12 @@
   
   
   
-  <title>java-nio-wakeup-trick | 鱼的记忆</title>
+  <title>Golang的协程同步 | 鱼的记忆</title>
 
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 
   
-    <meta name="keywords" content="技术,Java,NIO,">
+    <meta name="keywords" content="技术,Golang,Golang,内存模型,">
   
 
   <script>
@@ -198,12 +198,12 @@ var _hmt = _hmt || [];
 
 <div class="post">
   <h1 class="article-title">
-    <span>java-nio-wakeup-trick</span>
+    <span>Golang的协程同步</span>
   </h1>
   <div class="article-top-meta">
     <span>
       发布 : 
-      2019-07-01
+      2020-01-26
     </span>
     
       <span>
@@ -220,23 +220,25 @@ var _hmt = _hmt || [];
 
   <div class="article-content">
     <div class="markdown-body">
-      <h1 id="探索NIO-wakeup内部原理"><a href="#探索NIO-wakeup内部原理" class="headerlink" title="探索NIO wakeup内部原理"></a>探索NIO wakeup内部原理</h1><p>最近在重新梳理对Kafka的知识，看一遍源码加深印象。源码实现中，Kafka的客户端与服务端都是基于Java NIO机制提高网络IO的效率（当然，这不是唯一因素）。</p>
-<p>这里就不再重复说明阻塞/非阻塞，同步/异步IO模型之间的区别了，也不赘述非阻塞IO在不同平台上的实现，例如select，epoll，kqueue等，这些都可以在网络上找到很丰富的文档以及示例。</p>
-<h2 id="wakeup-接口"><a href="#wakeup-接口" class="headerlink" title="wakeup 接口"></a>wakeup 接口</h2><p>Java NIO里面，我觉得蛮有意思的是这么一个接口，蛮trick的：</p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"> <span class="comment">/**</span></span><br><span class="line"><span class="comment"> * Causes the first selection operation that has not yet returned to return</span></span><br><span class="line"><span class="comment"> * immediately.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * &lt;p&gt; If another thread is currently blocked in an invocation of the</span></span><br><span class="line"><span class="comment"> * &#123;<span class="doctag">@link</span> #select()&#125; or &#123;<span class="doctag">@link</span> #select(long)&#125; methods then that invocation</span></span><br><span class="line"><span class="comment"> * will return immediately.  If no selection operation is currently in</span></span><br><span class="line"><span class="comment"> * progress then the next invocation of one of these methods will return</span></span><br><span class="line"><span class="comment"> * immediately unless the &#123;<span class="doctag">@link</span> #selectNow()&#125; method is invoked in the</span></span><br><span class="line"><span class="comment"> * meantime.  In any case the value returned by that invocation may be</span></span><br><span class="line"><span class="comment"> * non-zero.  Subsequent invocations of the &#123;<span class="doctag">@link</span> #select()&#125; or &#123;<span class="doctag">@link</span></span></span><br><span class="line"><span class="comment"> * #select(long)&#125; methods will block as usual unless this method is invoked</span></span><br><span class="line"><span class="comment"> * again in the meantime.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * &lt;p&gt; Invoking this method more than once between two successive selection</span></span><br><span class="line"><span class="comment"> * operations has the same effect as invoking it just once.  &lt;/p&gt;</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@return</span>  This selector</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">abstract</span> Selector <span class="title">wakeup</span><span class="params">()</span></span>;</span><br></pre></td></tr></table></figure>
-<p>从上面的注释可以看出，这个接口可以立刻中断正在执行的select()调用，或者接下来第一次被调用的select()调用。</p>
-<p>这么神奇？我印象中的非阻塞实现好像不支持“唤醒”功能，Java NIO是怎么做到的？</p>
-<p>本着好学求知的精神，我转向Google寻求帮助，终于在StackOverflow上找到了一个相似的问题：</p>
-<p><a href="https://stackoverflow.com/questions/2244466/interrupting-epoll-wait-with-a-non-io-event-no-signals" target="_blank" rel="noopener">如何在没有IO事件时中断epoll_wait</a></p>
-<p>里面提到了一个技巧：<a href="http://cr.yp.to/docs/selfpipe.html" target="_blank" rel="noopener">self-pipe</a>，通过管道文件IO的方式唤醒确实是可以做到的，JDK源码也证实了这一点。</p>
-<h2 id="源码验证"><a href="#源码验证" class="headerlink" title="源码验证"></a>源码验证</h2><p><img src="/images/java-nio-wakeup-flow.png" alt="java-nio-wakeup-flow"></p>
-<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">interrupt</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    interrupt(<span class="keyword">this</span>.interruptFD);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">private</span> <span class="keyword">native</span> <span class="keyword">int</span> <span class="title">poll0</span><span class="params">(<span class="keyword">long</span> var1, <span class="keyword">int</span> var3, <span class="keyword">long</span> var4)</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">native</span> <span class="keyword">void</span> <span class="title">interrupt</span><span class="params">(<span class="keyword">int</span> var0)</span></span>;</span><br></pre></td></tr></table></figure>
-<p>从图中可以看出，最终的wakeup调用了类sun.nio.ch.PollArrayWrapper的interrupt本地方法。</p>
-<p>进一步，我们找到了这个本地方法的具体C语言实现，具体定义在src/linux/native/sun/nio/ch/PollArrayWrapper.c文件中：</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">JNIEXPORT <span class="keyword">void</span> JNICALL</span><br><span class="line">Java_sun_nio_ch_PollArrayWrapper_interrupt(JNIEnv *env, jobject <span class="keyword">this</span>, jint fd)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">int</span> fakebuf[<span class="number">1</span>];</span><br><span class="line">    fakebuf[<span class="number">0</span>] = <span class="number">1</span>;</span><br><span class="line">    <span class="keyword">if</span> (write(fd, fakebuf, <span class="number">1</span>) &lt; <span class="number">0</span>) &#123;</span><br><span class="line">         JNU_ThrowIOExceptionWithLastError(env,</span><br><span class="line">                                          <span class="string">"Write to interrupt fd failed"</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-<p>通过往管道FD中写入一个整数1的方式，触发了管道FD的可读事件，进而中断了NIO的select()调用。</p>
-<p>self-pipe 还是一个蛮有意思的trick。</p>
-<p>本文链接 <a href="http://yexingzhe54.github.io/passages/java-nio-wakeup-trick/">http://yexingzhe54.github.io/passages/java-nio-wakeup-trick/</a> </p>
+      <h2 id="问题背景"><a href="#问题背景" class="headerlink" title="问题背景"></a>问题背景</h2><p>最近遇到了一个BUG，由于对Golang的同步模型理解不够深入所导致的资源泄露。</p>
+<p>伪代码如下：</p>
+<figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> res Connection</span><br><span class="line">done := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="keyword">bool</span>)</span><br><span class="line"><span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span>&#123;</span><br><span class="line">	<span class="keyword">defer</span> <span class="built_in">close</span>(done)</span><br><span class="line">	res, err := acquire(<span class="number">200</span> * time.Millisecond) <span class="comment">//计数器递增</span></span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		log.Printf(<span class="string">"err: %v"</span>, err) <span class="comment">//第7行，这里报错</span></span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">	doWork(res)</span><br><span class="line">&#125;()</span><br><span class="line"><span class="keyword">select</span> &#123;</span><br><span class="line"> <span class="keyword">case</span> &lt;-done:</span><br><span class="line"> <span class="keyword">case</span> &lt;-time.After(<span class="number">300</span> * time.Millisecond):</span><br><span class="line">&#125;</span><br><span class="line">release(res) <span class="comment">//如果res不等于nil，计数器递减</span></span><br></pre></td></tr></table></figure>
+<p>咋一看来，代码没有逻辑问题。当时我在Review这份代码的时候，直观的感觉是写的不规范，把release和acquire分开到两个不同的routine，容易被遗漏，代码可读性不佳，也就是说代码写的不优雅。但是，同事说服了我，业务逻辑里需要将资源及时释放，因此有必要在超时的时候主动释放这个资源，所以不优雅这个小问题就是可以被容忍的。</p>
+<p>这段代码上线后不久，我们就在业务日志里发现大量“资源耗尽”的错误日志，很容易就定位到这个错误是在代码里的第7行出现，由acquire()抛出的。我们维护了一个“资源计数器”，acquire的时候递增，而release的时候递减，计数器超过阈值的时候就会抛出“资源耗尽”的错误。</p>
+<h2 id="问题排查"><a href="#问题排查" class="headerlink" title="问题排查"></a>问题排查</h2><p>资源耗尽？第一反应是我们的线上流量太大，导致资源使用量超过了计数器的阈值。我们通过netstat检查了连接信息，发现连接数不到个位数，远远未到超过阈值的程度。</p>
+<p>接着，我们还是不死心，希望可以更透明地观察到程序内部的运行状态，确认计数器的状态。于是，我们引入exp/var包，这样就可以实时查看计数器，阈值，连接数, inflght request（正在处理的请求数）. 结果发现，抛出错误的时候，计数器与阈值相等，inflght request与连接数差不多且远小于计数器/阈值。</p>
+<p>到了这里，我们开始怀疑计数器的实现有问题，可能没有对并发做好控制。检查了acquire/release的代码，在读写计数器的时候都正确的加了锁，看起来无懈可击。</p>
+<p>问题到底出在了哪里？我们陷入了苦恼中，直到我们发现其他指标也出现了异常。在我们的服务中，有个在最坏情况下不会超过150毫秒（因为有定时器控制）的延时指标，居然出现了延时达到1秒的情况。机器时钟坏掉或者golang的定时器出现了BUG这种小概率事件暂不考虑，对此比较合理的猜想是CPU过于繁忙，协程调度器的调度时间比较长，导致最后延时指标异常。那么回过头来看我们的代码，在调度异常的情况下会发生什么情况呢？release 可能会发生在 acquire 前，由于release只有在资源非空的情况下才会递减计数器，因此计数器就会在acquire里递增，重复出现几次这样的情况下，计数器就会达到阈值，抛出“资源耗尽”的错误。</p>
+<p>为了维护计数器的正确，必须确保acquire发生在release之前，也就是所谓的<strong>happen-before</strong>。而我们的代码里是希望通过定时器的超时长短来确保<strong>happen-before</strong>，也就是说，超时短的事件一定会提前结束，发生在超时长的事件前。很遗憾，Golang的<strong>happen-before</strong>原则里不包含定时器超时事件，超时不能保证先后顺序。Golang的内存模型具体请参考<a href="https://golang.org/ref/mem" target="_blank" rel="noopener">Golang内存模型</a>，简单概括如下：</p>
+<ol>
+<li>init 发生在 main 前，而且根据包的依赖顺序，被依赖方的init发生在依赖方的init前</li>
+<li>对于有buffer的channel，send与close发生在receive前；无buffer的channel，receive发生在send前；没有对有buffer的channel的close事件做说明，待考证</li>
+<li>对于锁，Unlock发生在Lock前</li>
+</ol>
+<h2 id="问题的修复"><a href="#问题的修复" class="headerlink" title="问题的修复"></a>问题的修复</h2><p>因此，要想确保协程间的同步顺序，只能依靠channel或者lock。</p>
+<p>最后，我们对代码做了修复，计数器问题得到了解决：</p>
+<figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> res Connection</span><br><span class="line">done := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="keyword">bool</span>)</span><br><span class="line">exit := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="keyword">bool</span>)</span><br><span class="line"><span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span>&#123;</span><br><span class="line">	<span class="keyword">defer</span> <span class="built_in">close</span>(done)</span><br><span class="line">	res, err := acquire(<span class="number">200</span> * time.Millisecond) <span class="comment">//计数器递增</span></span><br><span class="line">	If err != <span class="literal">nil</span> &#123;</span><br><span class="line">		log.Printf(<span class="string">"err: %v"</span>, err)</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// here, setup cleaner</span></span><br><span class="line">	<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">(res Connection)</span></span>&#123;</span><br><span class="line">		&lt;- exit</span><br><span class="line">		release(res)</span><br><span class="line">	&#125;(res) <span class="comment">//catch res</span></span><br><span class="line">	doWork(res)</span><br><span class="line">&#125;()</span><br><span class="line"><span class="keyword">select</span> &#123;</span><br><span class="line"> <span class="keyword">case</span> &lt;-done:</span><br><span class="line"> <span class="keyword">case</span> &lt;-time.After(<span class="number">300</span> * time.Millisecond):</span><br><span class="line">&#125;</span><br><span class="line"><span class="built_in">close</span>(exit) <span class="comment">//notify exit</span></span><br></pre></td></tr></table></figure>
+<p>本文链接 <a href="http://yexingzhe54.github.io/passages/Golang的协程同步/">http://yexingzhe54.github.io/passages/Golang的协程同步/</a> </p>
 
     </div>
   </div>
@@ -248,7 +250,7 @@ var _hmt = _hmt || [];
         
           本文作者 : 比特鱼 <br>
         
-        原文链接 : <a href>http://yexingzhe54.github.io/passages/java-nio-wakeup-trick/</a><br>
+        原文链接 : <a href>http://yexingzhe54.github.io/passages/Golang的协程同步/</a><br>
         版权声明 : 本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议。转载请注明出处！
         </blockquote>
       </div>
@@ -308,14 +310,14 @@ var _hmt = _hmt || [];
           <i class="iconfont icon-06tags"></i>标签: 
           
           <span class="span--tag">
-            <a href="/tags/Java/">
-              #Java
+            <a href="/tags/Golang/">
+              #Golang
             </a>
           </span>
           
           <span class="span--tag">
-            <a href="/tags/NIO/">
-              #NIO
+            <a href="/tags/内存模型/">
+              #内存模型
             </a>
           </span>
           
@@ -340,15 +342,9 @@ var _hmt = _hmt || [];
       <div class="nav-pre">
         <i class="iconfont icon-prev"></i>
         上一篇:
-        <a href="/passages/golang-memory-leak-failure/" target="_self">golang-memory-leak-failure</a>
-      </div>
-    
-    
-      <div class="nav-next">
-        下一篇:
         <a href="/passages/hdfs-proxy/" target="_self">hdfs-proxy</a>
-        <i class="iconfont icon-next"></i>
       </div>
+    
     
   </nav>
 

@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+  
+<head>
+  <meta charset="utf-8">
+  <meta name="author" content="董沅鑫, yuanxin.me@gmail.com" />
+  
+  
+  
+  <title>coursera-cloud-computing-specialization | 鱼的记忆</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+  
+    <meta name="keywords" content="个人发展,专业技能,distributed,cloud,coursera," />
+  
+
+  <script>
+    console.log('\n%c Hexo-theme-bmw v4.0 ' + '%c 🎉 https://github.com/dongyuanxin/theme-bmw 🎉\n' + '\n%c View demo online ' + '%c 🔍 https://godbmw.com/ 🔍  \n' , 'color: #fadfa3; background: #030307; padding:3px 0;', '', 'color: #fadfa3; background: #030307; padding:3px 0;', '');
+  </script>
+
+  
+    <meta name="description" content="一些速记与思考，避免知识的遗忘">
+  
+
+  
+
+  
+    <link rel="icon" href="/images/favicon.ico">
+    <link rel="apple-touch-icon" href="/images/touch-icon.png">
+  
+
+  <link href="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.css" rel="stylesheet">
+  
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/icon/iconfont.css">
+<link rel="stylesheet" href="/css/github-markdown.css">
+<link rel="stylesheet" href="/css/highlight.css">
+
+
+  
+<script src="/js/util.js"></script>
+<script src="/js/valine.min.js"></script>
+
+
+  
+
+  
+    <link href="https://cdn.bootcss.com/aplayer/1.10.1/APlayer.min.css" rel="stylesheet">
+    <script src="https://cdn.bootcss.com/aplayer/1.10.1/APlayer.min.js" async></script>
+  
+
+  
+    <link href="https://cdn.bootcss.com/social-share.js/1.0.16/css/share.min.css" rel="stylesheet">
+  
+  
+  <script src="//cdn.bootcss.com/jquery/3.3.1/jquery.min.js" async></script>
+  
+  
+
+  <script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?817faf85f22b95af4412c999d42e90cd";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+  </script>
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+  <body>
+
+    
+
+    <div id="app">
+
+      <div class="header-wrap">
+  <header>
+    <div class="site-brand">
+      <div class="site-title">
+        <a href="/">鱼的记忆</a>
+      </div>
+    </div>
+    <nav class="site-navigation">
+      <ul class="nav-menu">
+      
+        <li class="nav-item" data-path="/">
+          
+            <a 
+              href="/"
+              target="_self"
+            >
+              主页
+            </a>
+          
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          
+            <a 
+              href="/archives/"
+              target="_self"
+            >
+              归档
+            </a>
+          
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          
+            <a 
+              href="/categories/"
+              target="_self"
+            >
+              分类
+            </a>
+          
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          
+            <a 
+              href="/tags/"
+              target="_self"
+            >
+              标签
+            </a>
+          
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          
+            <a 
+              href="/about/"
+              target="_self"
+            >
+              关于
+            </a>
+          
+        </li>
+      
+        <li class="nav-item" data-path="">
+          
+            <a href="javascript:void(0);" v-else>抓到我</a>
+            <ul class="nav-menu--dropdown">
+              
+                <li>
+                  <a 
+                    href="https://github.com/YEXINGZHE54" 
+                    target="_blank"
+                  >
+                    Github
+                  </a>
+                </li>
+              
+                <li>
+                  <a 
+                    href="https://www.zhihu.com/people/li-zhao-xing-97/activities" 
+                    target="_blank"
+                  >
+                    知乎
+                  </a>
+                </li>
+              
+            </ul>
+          
+        </li>
+      
+      </ul>
+    </nav>
+    <i class="iconfont icon-menu"></i>
+  </header>
+</div>
+
+<script>
+  let links = document.querySelectorAll('.nav-item');
+  for(let link of links){
+    let childrenLink = link.querySelector('ul');
+    link.addEventListener('mouseenter', () => {
+      if(childrenLink) {
+        childrenLink.className = "nav-menu--dropdown active";
+      }
+    })
+    link.addEventListener('mouseleave', () => {
+      if(childrenLink) {
+        childrenLink.className = "nav-menu--dropdown";
+      }
+    })
+  }
+  let rootRealPath = getRealPath(window.location.pathname, true);
+  for(let link of links) {
+    let linkPath = link.getAttribute("data-path");
+    if(linkPath && getRealPath(linkPath, true) === rootRealPath) {
+      link.className = "nav-item hover";
+    }
+  }
+
+  let iconMenu = document.querySelector("i.iconfont.icon-menu"),
+    iconMenuClicked = false;
+  let navDOM = document.querySelector("nav.site-navigation");
+  iconMenu.addEventListener("click", () => {
+    iconMenuClicked 
+      ? navDOM.className = "site-navigation active"
+      : navDOM.className = "site-navigation";
+    iconMenuClicked = !iconMenuClicked;
+  })
+</script>
+
+      
+
+
+
+
+
+
+
+
+<div class="container post-index">
+
+  
+
+<div class="post">
+  <h1 class="article-title">
+    <span>coursera-cloud-computing-specialization</span>
+  </h1>
+  <div class="article-top-meta">
+    <span>
+      发布 : 
+      2019-06-03
+    </span>
+    
+      <span>
+        分类 : 
+          <a href="/categories/%E4%B8%AA%E4%BA%BA%E5%8F%91%E5%B1%95/">
+            个人发展
+          </a>
+      </span>
+    
+    
+  </div>
+
+  
+
+  <div class="article-content">
+    <div class="markdown-body">
+      <p>两个月前，机缘巧合之下看到了Coursera上的专项付费系列：<a target="_blank" rel="noopener" href="https://www.coursera.org/specializations/cloud-computing">云计算 专项</a>。这个系列包含六门课程，主要是讲解了云计算的基础概念，理论，实现和应用。如果你有志于云计算/分布式开发，而且有一定的编程经验（C++与Python），这个系列的课程很适合你。至于我，其实已经从业五年了，重新夯实基础，补齐理论知识是我的主要目的。这个课程的编程题都不难，写的水一些，不用太考虑完美，都能拿到（编程题部分的）满分。</p>
+<p>学了一个月多，快把这六门课都学完了，在此记录一下自己的心得体会。</p>
+<h2 id="第一课-云计算基础-1"><a href="#第一课-云计算基础-1" class="headerlink" title="第一课 云计算基础 1"></a>第一课 云计算基础 1</h2><p>课程链接：<a target="_blank" rel="noopener" href="https://www.coursera.org/learn/cloud-computing/home/info">基础1</a></p>
+<p>得分：<a target="_blank" rel="noopener" href="https://www.coursera.org/account/accomplishments/verify/YG425AEEH2M4">92.4</a></p>
+<p>介绍：第一课的内容偏概念和介绍比较多，比较教科书。内容包括云计算相关的名词概念介绍，MapReduce范式，Gossip协议，P2P DHT理论，CAP理论，分布式时序，分布式一致性算法Paxos。</p>
+<p>评价：整体而言，这门课的信息量还是有点大的，基本上把云计算的传统概念都包圆了，课中和课后习题也会对讲解的理论进行测验；需要好好记笔记，不然课后习题会挂（Coursera可以允许反复做题取最高分，我当初就是不知道有这个机制，不然也不会这么低分😢）。这门课的额外阅读材料都是可选的，如果没用过Hadoop/Spakr/Zookeeper之类的分布式应用，还是看一下这些项目的介绍和原理比较好。这门课最后还有一个大作业，用C++实现一个Gossip协议，不用操心网络层和应用层，填充部分代码实现中间Gossip协议就行。参考<a href="/passages/gossip-protocol/">Gossip简介</a>，更容易理解一些。</p>
+<h2 id="第二课-云计算基础-2"><a href="#第二课-云计算基础-2" class="headerlink" title="第二课 云计算基础 2"></a>第二课 云计算基础 2</h2><p>课程链接：<a target="_blank" rel="noopener" href="https://www.coursera.org/learn/cloud-computing-2/home/info">基础2</a></p>
+<p>得分：<a target="_blank" rel="noopener" href="https://www.coursera.org/account/accomplishments/records/BD3SDPDHYFM6">95.8</a></p>
+<p>介绍：第二课延续第一课，继续讲解云计算领域的算法理论与工程实践，包括选主与互斥算法，并发控制与复制控制，新兴分布式领域：流式处理与图计算，经典分布式系统：共享文件系统与共享内存，现实云计算的挑战</p>
+<p>评价：这门课除了补充上节课剩余的理论算法相关知识以外，还着重介绍了云计算的实际应用：传统分布式系统和新兴流处理与图计算，有兴趣的可以自行深入挖掘。可惜没有对Flink的介绍。最后的大作业是实现一个分布式KV存储，主要是通过一致性哈希解决冗余备份的问题即可</p>
+<h2 id="第三课-云计算应用-1"><a href="#第三课-云计算应用-1" class="headerlink" title="第三课 云计算应用 1"></a>第三课 云计算应用 1</h2><p>课程链接：<a target="_blank" rel="noopener" href="https://www.coursera.org/learn/cloud-applications-part1/home/info">应用1</a></p>
+<p>得分：<a target="_blank" rel="noopener" href="https://www.coursera.org/account/accomplishments/records/CNBUPGSVPQMS">95.8</a></p>
+<p>介绍：这门课主要介绍了云计算的基础理论和底层虚拟化技术，接口协议，以及云存储的各种优劣</p>
+<p>评价：由于我有过虚拟化和云运维的经验，因此这门课难度相对来说比较小，基本上作用就是用来印证一下自己的过往经验是否存在偏差。这门课对于各种云存储的优劣对比，相对还是比较有用的，可以作为一个独立的调研报告了😏</p>
+<h2 id="第四课-云计算应用-2"><a href="#第四课-云计算应用-2" class="headerlink" title="第四课 云计算应用 2"></a>第四课 云计算应用 2</h2><p>课程链接：<a target="_blank" rel="noopener" href="https://www.coursera.org/learn/cloud-applications-part2/home/info">应用2</a></p>
+<p>得分：<a target="_blank" rel="noopener" href="https://www.coursera.org/account/accomplishments/records/TN5MPUR59G3R">97.5</a></p>
+<p>介绍：这门课着重介绍了Spark计算与HBASE分布式存储设计以及图计算/机器学习相关的Demo实践</p>
+<p>评价：如果说上门课和底层技术相关，这门课就是和云计算应用层相关了。除了对HBase的原理性介绍，主要介绍了如何使用Spark完成计算任务，以及各种技术栈在流式处理与图计算中的应用。大数据工程师值得学一下。这两门课都没有大作业</p>
+<h2 id="第五课-云端计算"><a href="#第五课-云端计算" class="headerlink" title="第五课 云端计算"></a>第五课 云端计算</h2><p>课程链接：<a target="_blank" rel="noopener" href="https://www.coursera.org/learn/cloud-networking/home/info">云网络</a></p>
+<p>得分：<a target="_blank" rel="noopener" href="https://www.coursera.org/account/accomplishments/records/SFBHXUCEEJN9">95.4</a></p>
+<p>介绍：主要介绍了云计算系统中的网络挑战，机房内，跨机房以及面向终端用户不同场景下的网络设计</p>
+<p>评价：说实话，这门课有好有坏。好的地方是，云端网络是一个很大的课题，可以包容很多的内容进来，这门课也确实做到了这点，仔细的讲解了机房内部，机房间，机房与用户间不同场景下的流量特点，网络挑战与解决方案，对SDN，CDN，TCP优化，新兴网络协议都有进行深入的阐述，收获满满。但是，课程附带的大作业就相对比较水了，在一个安装了OpenFlow的虚拟机中实现一个简单的流量控制逻辑，简单的不能再简单了，水的不能再水了。</p>
+<h2 id="第六课-云计算项目实践"><a href="#第六课-云计算项目实践" class="headerlink" title="第六课 云计算项目实践"></a>第六课 云计算项目实践</h2><p>课程链接：<a target="_blank" rel="noopener" href="https://www.coursera.org/learn/cloud-computing-project/home/info">项目实践</a></p>
+<p>得分：Nan</p>
+<p>介绍：没有介绍新内容，主要是项目实践。这门课首先需要在AWS上申请AWS Educate（一直没批下来），然后要在8月份才开课，主要项目实践内容是分别通过MapReduce与Spark两种方式，针对一个大数据集进行分析，回答一系列指定问题。</p>
+<p>评价：运气不好，没赶上上一拨开课流程，这一拨得等到8月份了。要回答的问题虽然比较多，但是都有答案。作业形式是实验报告，得分主要看同学互评，放轻松一些</p>
+<h2 id="反思"><a href="#反思" class="headerlink" title="反思"></a>反思</h2><p>两年前刚接触AWS以及相关的云计算概念的时候，那时候如果能学到这门课程对我的帮助会是最大的。可惜并没有，走了不少弯路，后来才慢慢云开雾明。这也说明了，掌握正确的学习方式和有领路人的重要性。在崭新的陌生领域，一个提纲挈领的入门教学的指导作用是巨大的，谨记。</p>
+<p>本文链接 <a href="http://yexingzhe54.github.io/passages/coursera-cloud-computing-specialization/">http://yexingzhe54.github.io/passages/coursera-cloud-computing-specialization/</a> </p>
+
+    </div>
+  </div>
+  
+    <div class="copy-right">
+      <div class="markdown-body">
+        <blockquote>
+        
+        
+          本文作者 : 比特鱼 <br/>
+        
+        原文链接 : <a href="">http://yexingzhe54.github.io/passages/coursera-cloud-computing-specialization/</a><br>
+        版权声明 : 本博客所有文章除特别声明外，均采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议。转载请注明出处！
+        </blockquote>
+      </div>
+    </div>
+  
+  
+  
+    <div class="social-share"
+  style="margin-top: -2rem"
+  data-wechat-qrcode-title="<p>微信扫一扫</p>"
+  data-wechat-qrcode-helper="<p>微信右上角, 扫一扫分享</p>"
+   data-sites="qzone, qq, weibo, wechat, douban, google, facebook, twitter" 
+  
+>
+  <span style="color: #6b7487; font-size: 1.4rem;">分享到: </span>
+</div>
+<script src="https://cdn.bootcss.com/social-share.js/1.0.16/js/social-share.min.js" async>
+  
+
+  
+    <div id="reward">
+  
+    <p id="reward-meta">知识 & 情怀 | 二者兼得</p>
+  
+  <button id="reward-btn">
+    
+    <span>投食</span>
+  </button>
+  <div id="reward-qrcode">
+    
+      <div class="reward-qrcode--container">
+        <img class="qrcode-img" src="/images/wechat.png" alt="微信扫一扫, 向我投食">
+        <p class="qrcode-meta">微信扫一扫, 向我投食</p>
+      </div>
+    
+      <div class="reward-qrcode--container">
+        <img class="qrcode-img" src="/images/alipay.png" alt="支付宝扫一扫, 向我投食">
+        <p class="qrcode-meta">支付宝扫一扫, 向我投食</p>
+      </div>
+    
+  </div>
+
+</div>
+
+<script>
+  (() => {
+    let button = document.querySelector('#reward-btn'),
+      qrcode = document.querySelector('#reward-qrcode'),
+      display = false;
+    
+    button.addEventListener('click', () => {
+      qrcode.style.display = display ? 'none' : 'block'
+      display = !display
+    }, false)
+  })()
+</script>
+  
+
+  <div class="article-footer">
+    <div class="article-meta pull-left">
+      <span>
+        
+          <i class="iconfont icon-06tags"></i>标签: 
+          
+          <span class="span--tag">
+            <a href="/tags/distributed/">
+              #distributed
+            </a>
+          </span>
+          
+          <span class="span--tag">
+            <a href="/tags/cloud/">
+              #cloud
+            </a>
+          </span>
+          
+          <span class="span--tag">
+            <a href="/tags/coursera/">
+              #coursera
+            </a>
+          </span>
+          
+        
+      </span>
+    </div>
+    <div class="article-meta pull-right">
+    </div>
+  </div>
+</div>
+
+
+  <aside id="sidebar">
+    <p id="sidebar-header"></p>
+    <ol id="sidebar-toc"></ol>
+  </aside>
+  <script async>setTimeout(generateToc, 10);</script>
+
+
+  <nav class="post-navigation">
+    
+      <div class="nav-pre">
+        <i class="iconfont icon-prev"></i>
+        上一篇:
+        <a href="/passages/paxos-simpliy/" target="_self">paxos-simpliy</a>
+      </div>
+    
+    
+      <div class="nav-next">
+        下一篇:
+        <a href="/passages/arthas-first-parctice/" target="_self">arthas-first-parctice</a>
+        <i class="iconfont icon-next"></i>
+      </div>
+    
+  </nav>
+
+   
+
+   
+
+</div>
+
+
+      <footer>
+  <p class="site-info">
+    博客已萌萌哒运行<span id="time-to-now"></span><span class="my-face">(●'◡'●)ﾉ♥</span>
+    <br>
+    Theme - <a target="_blank" rel="noopener" href="https://github.com/dongyuanxin/theme-bmw">BMW</a> | Made With 💗 | Powered by <a target="_blank" rel="noopener" href="https://godbmw.com/">GodBMW</a>
+    <br>
+    
+  </p>
+</footer>
+
+
+
+<script>
+const timeToNowDOM = document.querySelector("#time-to-now");
+const startTimestamp = new Date(2019, 3, 8).getTime();
+
+const updateTimeStr = () => {
+  let offset = parseInt(
+      (new Date().getTime() - startTimestamp) / 1000,
+      10
+    ),
+    day = Math.floor(offset / 86400),
+    hour = Math.floor((offset % 86400) / 3600),
+    minute = Math.floor(((offset % 86400) % 3600) / 60),
+    second = Math.floor(((offset % 86400) % 3600) % 60);
+  timeToNowDOM.innerHTML =
+    day + "天" + hour + "小时" + minute + "分钟" + second + "秒";
+  setTimeout(updateTimeStr, 500);
+}
+
+setTimeout(updateTimeStr, 500);
+</script>
+
+
+      <div class="back-to-top hidden">
+  <span>
+    <i class="iconfont icon-60"></i><span></span>%
+  </span>
+</div>
+
+<script>
+const updateIconToTop = percent => {
+  let dom = document.querySelector(".back-to-top span span");
+  dom.innerText = percent;
+  if(percent < 1) {
+    document.querySelector(".back-to-top").className = "back-to-top hidden";
+  } else {
+    document.querySelector(".back-to-top").className = "back-to-top";
+  }
+}
+
+const handleScoll = () => {
+  let isRunning = false;
+  return () => {
+    if (isRunning) return;
+    isRunning = true;
+    window.requestAnimationFrame(timestamp => {
+      let scrollTop =
+          document.documentElement.scrollTop || document.body.scrollTop,
+        scrollHeight =
+          document.documentElement.scrollHeight ||
+          document.body.scrollHeight,
+        clientHeight =
+          document.documentElement.clientHeight ||
+          document.body.clientHeight;
+      isRunning = false;
+      if (scrollTop <= 1) {
+        updateIconToTop(0);
+        return;
+      }
+      if (scrollTop + clientHeight >= scrollHeight) {
+        updateIconToTop(100);
+      } else {
+        updateIconToTop(parseInt(
+          100 * scrollTop / (scrollHeight - clientHeight),
+          10
+        ));
+      }
+    });
+  };
+}
+
+const backToTop = () => {
+  let scrollTop =
+      document.documentElement.scrollTop || document.body.scrollTop,
+    delay = 10,
+    time = 200;
+  if (scrollTop <= 20) {
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    return;
+  }
+  let step = Math.ceil(scrollTop * delay / time);
+  let timer = setInterval(() => {
+    scrollTop =
+      document.documentElement.scrollTop || document.body.scrollTop;
+    if (scrollTop - step <= 0) {
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      clearInterval(timer);
+    } else {
+      document.documentElement.scrollTop = scrollTop - step;
+      document.body.scrollTop = scrollTop - step;
+    }
+  }, delay);
+}
+
+document.addEventListener("scroll", handleScoll(), false);
+
+document.querySelector(".back-to-top").addEventListener("click", backToTop, false);
+
+</script>
+
+    </div>
+
+    
+      <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML" async></script>
+<script>
+  (() => {
+    const mathjaxConfig = {
+      showProcessingMessages: false, //关闭js加载过程信息
+      messageStyle: "none", //不显示信息
+      jax: ["input/TeX", "output/HTML-CSS"],
+      tex2jax: {
+        inlineMath: [["$", "$"], ["\\(", "\\)"]], //行内公式选择符
+        displayMath: [["$$", "$$"], ["\\[", "\\]"]], //段内公式选择符
+        skipTags: ["script", "noscript", "style", "textarea", "pre", "code", "a"] //避开某些标签
+      },
+      "HTML-CSS": {
+        availableFonts: ["STIX", "TeX"], //可选字体
+        showMathMenu: false //关闭右击菜单显示
+      }
+    }
+
+    let mathjaxInterval = setInterval(() => {
+      if(!window.MathJax){
+        return;
+      }
+      window.MathJax.Hub.Config(mathjaxConfig)
+      window.MathJax.Hub.Queue(["Typeset", MathJax.Hub, document.getElementById('app')])
+
+      clearInterval(mathjaxInterval)
+    }, 10)    
+  })()
+</script>
+    
+
+    <script src="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.js" async></script>
+<script async>
+  let fancyTimer = setInterval(function(){
+    if(!window.$){
+      return;
+    }
+    $(document).ready(function() {
+      $(".post img").each(function () {
+        if($(this).parent().get(0).tagName.toLowerCase() === "a") {
+          return;
+        }
+        // $(this).attr("data-fancybox", "gallery"); // if you add 'data-fancybox', img will display after showed
+        var element = document.createElement("a");
+        $(element).attr("data-fancybox", "gallery");
+        $(element).attr("href", $(this).attr("src"));
+        $(this).wrap(element);
+      });
+      
+      clearInterval(fancyTimer);
+    });
+  }, 10);
+</script>
+
+    
+  </body>
+
+</html>

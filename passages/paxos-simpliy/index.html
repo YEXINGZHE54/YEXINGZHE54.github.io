@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+  
+<head>
+  <meta charset="utf-8">
+  <meta name="author" content="董沅鑫, yuanxin.me@gmail.com" />
+  
+  
+  
+  <title>paxos-simpliy | 鱼的记忆</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+  
+    <meta name="keywords" content="技术,分布式理论,distributed,consensus,paxos," />
+  
+
+  <script>
+    console.log('\n%c Hexo-theme-bmw v4.0 ' + '%c 🎉 https://github.com/dongyuanxin/theme-bmw 🎉\n' + '\n%c View demo online ' + '%c 🔍 https://godbmw.com/ 🔍  \n' , 'color: #fadfa3; background: #030307; padding:3px 0;', '', 'color: #fadfa3; background: #030307; padding:3px 0;', '');
+  </script>
+
+  
+    <meta name="description" content="一些速记与思考，避免知识的遗忘">
+  
+
+  
+
+  
+    <link rel="icon" href="/images/favicon.ico">
+    <link rel="apple-touch-icon" href="/images/touch-icon.png">
+  
+
+  <link href="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.css" rel="stylesheet">
+  
+<link rel="stylesheet" href="/css/base.css">
+<link rel="stylesheet" href="/icon/iconfont.css">
+<link rel="stylesheet" href="/css/github-markdown.css">
+<link rel="stylesheet" href="/css/highlight.css">
+
+
+  
+<script src="/js/util.js"></script>
+<script src="/js/valine.min.js"></script>
+
+
+  
+
+  
+    <link href="https://cdn.bootcss.com/aplayer/1.10.1/APlayer.min.css" rel="stylesheet">
+    <script src="https://cdn.bootcss.com/aplayer/1.10.1/APlayer.min.js" async></script>
+  
+
+  
+    <link href="https://cdn.bootcss.com/social-share.js/1.0.16/css/share.min.css" rel="stylesheet">
+  
+  
+  <script src="//cdn.bootcss.com/jquery/3.3.1/jquery.min.js" async></script>
+  
+  
+
+  <script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?817faf85f22b95af4412c999d42e90cd";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+  </script>
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+  <body>
+
+    
+
+    <div id="app">
+
+      <div class="header-wrap">
+  <header>
+    <div class="site-brand">
+      <div class="site-title">
+        <a href="/">鱼的记忆</a>
+      </div>
+    </div>
+    <nav class="site-navigation">
+      <ul class="nav-menu">
+      
+        <li class="nav-item" data-path="/">
+          
+            <a 
+              href="/"
+              target="_self"
+            >
+              主页
+            </a>
+          
+        </li>
+      
+        <li class="nav-item" data-path="/archives/">
+          
+            <a 
+              href="/archives/"
+              target="_self"
+            >
+              归档
+            </a>
+          
+        </li>
+      
+        <li class="nav-item" data-path="/categories/">
+          
+            <a 
+              href="/categories/"
+              target="_self"
+            >
+              分类
+            </a>
+          
+        </li>
+      
+        <li class="nav-item" data-path="/tags/">
+          
+            <a 
+              href="/tags/"
+              target="_self"
+            >
+              标签
+            </a>
+          
+        </li>
+      
+        <li class="nav-item" data-path="/about/">
+          
+            <a 
+              href="/about/"
+              target="_self"
+            >
+              关于
+            </a>
+          
+        </li>
+      
+        <li class="nav-item" data-path="">
+          
+            <a href="javascript:void(0);" v-else>抓到我</a>
+            <ul class="nav-menu--dropdown">
+              
+                <li>
+                  <a 
+                    href="https://github.com/YEXINGZHE54" 
+                    target="_blank"
+                  >
+                    Github
+                  </a>
+                </li>
+              
+                <li>
+                  <a 
+                    href="https://www.zhihu.com/people/li-zhao-xing-97/activities" 
+                    target="_blank"
+                  >
+                    知乎
+                  </a>
+                </li>
+              
+            </ul>
+          
+        </li>
+      
+      </ul>
+    </nav>
+    <i class="iconfont icon-menu"></i>
+  </header>
+</div>
+
+<script>
+  let links = document.querySelectorAll('.nav-item');
+  for(let link of links){
+    let childrenLink = link.querySelector('ul');
+    link.addEventListener('mouseenter', () => {
+      if(childrenLink) {
+        childrenLink.className = "nav-menu--dropdown active";
+      }
+    })
+    link.addEventListener('mouseleave', () => {
+      if(childrenLink) {
+        childrenLink.className = "nav-menu--dropdown";
+      }
+    })
+  }
+  let rootRealPath = getRealPath(window.location.pathname, true);
+  for(let link of links) {
+    let linkPath = link.getAttribute("data-path");
+    if(linkPath && getRealPath(linkPath, true) === rootRealPath) {
+      link.className = "nav-item hover";
+    }
+  }
+
+  let iconMenu = document.querySelector("i.iconfont.icon-menu"),
+    iconMenuClicked = false;
+  let navDOM = document.querySelector("nav.site-navigation");
+  iconMenu.addEventListener("click", () => {
+    iconMenuClicked 
+      ? navDOM.className = "site-navigation active"
+      : navDOM.className = "site-navigation";
+    iconMenuClicked = !iconMenuClicked;
+  })
+</script>
+
+      
+
+
+
+
+
+
+
+
+<div class="container post-index">
+
+  
+
+<div class="post">
+  <h1 class="article-title">
+    <span>paxos-simpliy</span>
+  </h1>
+  <div class="article-top-meta">
+    <span>
+      发布 : 
+      2019-05-02
+    </span>
+    
+      <span>
+        分类 : 
+          <a href="/categories/%E6%8A%80%E6%9C%AF/">
+            技术
+          </a>
+      </span>
+    
+    
+  </div>
+
+  
+
+  <div class="article-content">
+    <div class="markdown-body">
+      <h2 id="Paxos-Made-Simple-读后感"><a href="#Paxos-Made-Simple-读后感" class="headerlink" title="Paxos Made Simple 读后感"></a>Paxos Made Simple 读后感</h2><p>近来在Cousera上学习 <a target="_blank" rel="noopener" href="https://www.coursera.org/specializations/cloud-computing">Cloud Computing Concept Part 1</a>，其中涉及到了对Paxos算法的介绍。Paxos算法固然是比较难懂的，但是幸好有简化版论文 <a target="_blank" rel="noopener" href="http://www.cs.utexas.edu/users/lorenzo/corsi/cs380d/past/03F/notes/paxos-simple.pdf?spm=a2c4e.11153940.blogcont85470.8.76e44d9eRGbB30&amp;file=paxos-simple.pdf">Paxos Made Simple</a>，相对好理解很多，分享一下自己的理解。</p>
+<h2 id="Paxos算法的问题背景"><a href="#Paxos算法的问题背景" class="headerlink" title="Paxos算法的问题背景"></a>Paxos算法的问题背景</h2><p>分布式系统进程模型：多个分布式进程节点，彼此只能通过网络消息通信；整个系统是异步的，时钟可能不同步，时间流速也可能不同，消息可能丢失，乱序到达，也可能无限延迟，任一进程可能失败退出（但是至少超过半数节点存活并可以互相通信）。</p>
+<p>分布式一致性问题：分布式系统中每个进程都有一个变量y，最初处于为未初始化状态，一旦变量y的值被确定，就不允许被修改；经过有限步骤，使得所有活着的进程都确定同一个y值，这就是一致性问题</p>
+<h2 id="简单说明"><a href="#简单说明" class="headerlink" title="简单说明"></a>简单说明</h2><p><img src="/images/paxos-simple-normal-case.png" alt="paxos-simple-normal-case"></p>
+<ol>
+<li>Paxos 算法可以简单分为两个阶段，Prepare和Accept, 分别用于收集选票和提案</li>
+<li>有两种进程角色（Proposer和Acceptor，简称P和A），P在收集到足够多选票的情况下发起提案，A则负责投票和接受提案</li>
+</ol>
+<h3 id="Prepare阶段"><a href="#Prepare阶段" class="headerlink" title="Prepare阶段"></a>Prepare阶段</h3><p>P选定一个全新的序号n，发起一个Prepare请求；A收到Prepare请求，如果请求中的序号n大于过去收到的n，那么A需要记录最新n值，返回Promise信息，并附带最近一次Accept阶段接收的序号和值（如果没有则不需要）；P需要等待A返回的Promise信息，如果超过半数则进入下一阶段，否则可以尝试发起新一轮Paxos。</p>
+<h3 id="Accept阶段"><a href="#Accept阶段" class="headerlink" title="Accept阶段"></a>Accept阶段</h3><p>P从上一阶段Promise信息中找出序号最大的Accept值，并用它发起Accept请求，如果所有Promise都不包含Accept值，那么P可以自行选择一个值；A收到Accept请求，如果请求中的序号等于当前序号n则写入日志并返回OK；如果P收到超过半数OK，说明超过半数都接受了结果，否则可以尝试发起新一轮Paxos。</p>
+<h2 id="容错分析"><a href="#容错分析" class="headerlink" title="容错分析"></a>容错分析</h2><p>正常情况下：Prepare阶段全票通过，Accept阶段全部OK，这是最理想的情况，无须多言；Paxos 算法在复杂的分布式环境下依然有很好的容错性，这是我们需要学习的地方。</p>
+<p>要做容错分析，我们先整理一下分布式系统中可能遇到的错误：</p>
+<ul>
+<li>消息延迟：消息经过一段时间的延迟以后才送达</li>
+<li>消息重传：为了避免消息丢失而再次传递相同消息</li>
+<li>消息乱序：历史消息乱序到达，某种意义上是由于延迟/重传造成的</li>
+<li>消息丢失：由于网络分区，消息无法送达</li>
+<li>进程退出：由于某些外部因素，进程崩溃退出</li>
+<li>消息错误，存储错误或算法之外的步骤等：这类拜占庭问题不在我们的考虑范畴</li>
+</ul>
+<p>整体而言，错误可以分为两类：</p>
+<ul>
+<li>网络分区（丢失）：<strong>消息丢失</strong>属于网络分区的范畴，<strong>进程退出</strong>的直接结果就是消息丢失，因此也可以归于网络分区问题，如果网络延迟比较大的情况消息延迟就等同于丢失了，即使后续收到了也和消息重传等效，因此<strong>消息延迟</strong>也属于网络分区</li>
+<li>消息重传（重复）：<strong>消息延迟</strong>，<strong>消息乱序</strong>和<strong>消息重传</strong>也可以看作是等效的，都可以通过超时重传机制达成同样的效果</li>
+</ul>
+<p>因此，<strong>Paxos算法的容错性其实就是对消息丢失与重复的容错</strong></p>
+<h3 id="消息丢失"><a href="#消息丢失" class="headerlink" title="消息丢失"></a>消息丢失</h3><p>Paxos可以在网络分区的前提下仍然达成共识（至少有半数以上节点存活且属于同一分区），并且共识一旦达成就不再改变，非常安全，非常适合做事务性协议基础。简单而言，Paxos在任何阶段如果超过半数消息丢失，都是直接发起新一轮Paxos。接下来，详细列出不同阶段对消息丢失的处理原因。</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>消息丢失场景</th>
+<th>处理方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prepare请求</td>
+<td>P当前所处分区可能是<strong>少数派</strong>，没有足够多A可以接收到该请求，见图(a)</td>
+<td>P无法得到足够多的选票，随机等待一段时间，开始下一轮Paxos即可。如果P一直处于<strong>少数派</strong>，那么它将永远无法获得足够多的选票，永远停留在这个Prepare阶段</td>
+</tr>
+<tr>
+<td>Promise接收</td>
+<td>Prepare请求被大多数节点都收到了，但是只收到了少数Promise消息，这个情况意味着网络分区发生了变化，P从<strong>多数派</strong>分区变成<strong>少数派</strong>分区，见图(b)</td>
+<td>P无法得到足够多的选票，需要开启下一轮Paxos</td>
+</tr>
+<tr>
+<td>Accept请求</td>
+<td>P所在分区属于<strong>少数派</strong>，没有足够的A可以收到Accept请求，与图(a)类似，就不再单独出图</td>
+<td>P无法得到足够多的OK响应，那么P需要重新发起新一轮Paxos</td>
+</tr>
+<tr>
+<td>OK响应</td>
+<td>已经有超过半数的节点接受了Accept请求，但是P所在分区变成了<strong>少数派</strong>，OK响应丢失，见图(c)</td>
+<td>在Paxos的设计中，只要超过半数的节点接受了Accept请求，那么事实上就已经达成了<strong>实质性的共识</strong>。Paxos不需要仰赖OK消息的稳定性，即使这些OK响应都丢失了，即使P没有收到OK响应，也没有关系，它仍然可以确保未来每一轮Paxos都会使用这个<strong>实质性共识</strong>里的值。</td>
+</tr>
+</tbody>
+</table>
+<p>那么更具体而言，如果所有OK响应丢失了，Paxos是如何确保共识的值不会再被新的值覆盖呢？它的安全性如何得到保障？请注意，Promise响应除了有选票的作用外，还附带了最近一次Accept的值的信息。因此，即使OK响应丢失了，下一轮Paxos发起的时候，P仍然可以通过Promise消息得到上一轮被Accept的值，P会继续使用这个值发起Accept请求，而不是其他值。因此，通过重试和Promise机制，解决了消息丢失导致的共识覆盖问题。</p>
+<p><img src="/images/paxos-simple-message-drop.png" alt="paxos-simple-message-drop"></p>
+<h3 id="消息重复"><a href="#消息重复" class="headerlink" title="消息重复"></a>消息重复</h3><p>对于重复或者迟到的消息，也会对一致性共识造成一定干扰，Paxos对此也有防御措施：Paxos中的进程都会记录一个n值，代表了当前Paxos的轮次序号。如果消息中的n值小于进程里的n值，这个消息会被认为是重复/延迟/乱序到达的消息，因此会被忽略。接下来，具体列出不同阶段对消息重复的处理</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>消息重复场景</th>
+<th>处理方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prepare请求</td>
+<td>Prepare消息的重传/延迟/乱序，或者另一个P正好也使用这个序号n,见图(d)</td>
+<td>如果A接收到的Prepare消息里的n值小于等于A存储的n值，那么A会忽略或拒绝它。在P看来这种处理方式就是发生了网络分区，但是不影响A的处理方式</td>
+</tr>
+<tr>
+<td>Promise接收</td>
+<td></td>
+<td>响应内容的重复可以忽略</td>
+</tr>
+<tr>
+<td>Accept请求</td>
+<td>Accept消息的重传/延迟/乱序，或者另一个P发起了更高序号的Prepare请求,见图(e)</td>
+<td>如果Accept请求里的n值小于A存储的n值，那么A会拒绝这个请求。对于第二种情况，两个P分别处于Prepare/Accept阶段轮转，他们会互相干扰，导致Acceptor在不断更新n值，不断拒绝Accept请求，导致无法达成最终的共识，这也是所谓的<strong>活锁</strong>问题。活锁问题可以用选主加随机的方式解决</td>
+</tr>
+<tr>
+<td>OK响应</td>
+<td></td>
+<td>响应内容的重复可以忽略</td>
+</tr>
+</tbody>
+</table>
+<p><img src="/images/paxos-simple-live-lock.png" alt="paxos-simple-live-lock"></p>
+<h2 id="相关文献"><a href="#相关文献" class="headerlink" title="相关文献"></a>相关文献</h2><ul>
+<li><a target="_blank" rel="noopener" href="http://www.cs.utexas.edu/users/lorenzo/corsi/cs380d/past/03F/notes/paxos-simple.pdf?spm=a2c4e.11153940.blogcont85470.8.76e44d9eRGbB30&amp;file=paxos-simple.pdf">http://www.cs.utexas.edu/users/lorenzo/corsi/cs380d/past/03F/notes/paxos-simple.pdf?spm=a2c4e.11153940.blogcont85470.8.76e44d9eRGbB30&amp;file=paxos-simple.pdf</a></li>
+</ul>
+<p>本文链接 <a href="http://yexingzhe54.github.io/passages/paxos-simpliy/">http://yexingzhe54.github.io/passages/paxos-simpliy/</a> </p>
+
+    </div>
+  </div>
+  
+    <div class="copy-right">
+      <div class="markdown-body">
+        <blockquote>
+        
+        
+          本文作者 : 比特鱼 <br/>
+        
+        原文链接 : <a href="">http://yexingzhe54.github.io/passages/paxos-simpliy/</a><br>
+        版权声明 : 本博客所有文章除特别声明外，均采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议。转载请注明出处！
+        </blockquote>
+      </div>
+    </div>
+  
+  
+  
+    <div class="social-share"
+  style="margin-top: -2rem"
+  data-wechat-qrcode-title="<p>微信扫一扫</p>"
+  data-wechat-qrcode-helper="<p>微信右上角, 扫一扫分享</p>"
+   data-sites="qzone, qq, weibo, wechat, douban, google, facebook, twitter" 
+  
+>
+  <span style="color: #6b7487; font-size: 1.4rem;">分享到: </span>
+</div>
+<script src="https://cdn.bootcss.com/social-share.js/1.0.16/js/social-share.min.js" async>
+  
+
+  
+    <div id="reward">
+  
+    <p id="reward-meta">知识 & 情怀 | 二者兼得</p>
+  
+  <button id="reward-btn">
+    
+    <span>投食</span>
+  </button>
+  <div id="reward-qrcode">
+    
+      <div class="reward-qrcode--container">
+        <img class="qrcode-img" src="/images/wechat.png" alt="微信扫一扫, 向我投食">
+        <p class="qrcode-meta">微信扫一扫, 向我投食</p>
+      </div>
+    
+      <div class="reward-qrcode--container">
+        <img class="qrcode-img" src="/images/alipay.png" alt="支付宝扫一扫, 向我投食">
+        <p class="qrcode-meta">支付宝扫一扫, 向我投食</p>
+      </div>
+    
+  </div>
+
+</div>
+
+<script>
+  (() => {
+    let button = document.querySelector('#reward-btn'),
+      qrcode = document.querySelector('#reward-qrcode'),
+      display = false;
+    
+    button.addEventListener('click', () => {
+      qrcode.style.display = display ? 'none' : 'block'
+      display = !display
+    }, false)
+  })()
+</script>
+  
+
+  <div class="article-footer">
+    <div class="article-meta pull-left">
+      <span>
+        
+          <i class="iconfont icon-06tags"></i>标签: 
+          
+          <span class="span--tag">
+            <a href="/tags/distributed/">
+              #distributed
+            </a>
+          </span>
+          
+          <span class="span--tag">
+            <a href="/tags/consensus/">
+              #consensus
+            </a>
+          </span>
+          
+          <span class="span--tag">
+            <a href="/tags/paxos/">
+              #paxos
+            </a>
+          </span>
+          
+        
+      </span>
+    </div>
+    <div class="article-meta pull-right">
+    </div>
+  </div>
+</div>
+
+
+  <aside id="sidebar">
+    <p id="sidebar-header"></p>
+    <ol id="sidebar-toc"></ol>
+  </aside>
+  <script async>setTimeout(generateToc, 10);</script>
+
+
+  <nav class="post-navigation">
+    
+      <div class="nav-pre">
+        <i class="iconfont icon-prev"></i>
+        上一篇:
+        <a href="/passages/gossip-protocol/" target="_self">gossip-protocol</a>
+      </div>
+    
+    
+      <div class="nav-next">
+        下一篇:
+        <a href="/passages/coursera-cloud-computing-specialization/" target="_self">coursera-cloud-computing-specialization</a>
+        <i class="iconfont icon-next"></i>
+      </div>
+    
+  </nav>
+
+   
+
+   
+
+</div>
+
+
+      <footer>
+  <p class="site-info">
+    博客已萌萌哒运行<span id="time-to-now"></span><span class="my-face">(●'◡'●)ﾉ♥</span>
+    <br>
+    Theme - <a target="_blank" rel="noopener" href="https://github.com/dongyuanxin/theme-bmw">BMW</a> | Made With 💗 | Powered by <a target="_blank" rel="noopener" href="https://godbmw.com/">GodBMW</a>
+    <br>
+    
+  </p>
+</footer>
+
+
+
+<script>
+const timeToNowDOM = document.querySelector("#time-to-now");
+const startTimestamp = new Date(2019, 3, 8).getTime();
+
+const updateTimeStr = () => {
+  let offset = parseInt(
+      (new Date().getTime() - startTimestamp) / 1000,
+      10
+    ),
+    day = Math.floor(offset / 86400),
+    hour = Math.floor((offset % 86400) / 3600),
+    minute = Math.floor(((offset % 86400) % 3600) / 60),
+    second = Math.floor(((offset % 86400) % 3600) % 60);
+  timeToNowDOM.innerHTML =
+    day + "天" + hour + "小时" + minute + "分钟" + second + "秒";
+  setTimeout(updateTimeStr, 500);
+}
+
+setTimeout(updateTimeStr, 500);
+</script>
+
+
+      <div class="back-to-top hidden">
+  <span>
+    <i class="iconfont icon-60"></i><span></span>%
+  </span>
+</div>
+
+<script>
+const updateIconToTop = percent => {
+  let dom = document.querySelector(".back-to-top span span");
+  dom.innerText = percent;
+  if(percent < 1) {
+    document.querySelector(".back-to-top").className = "back-to-top hidden";
+  } else {
+    document.querySelector(".back-to-top").className = "back-to-top";
+  }
+}
+
+const handleScoll = () => {
+  let isRunning = false;
+  return () => {
+    if (isRunning) return;
+    isRunning = true;
+    window.requestAnimationFrame(timestamp => {
+      let scrollTop =
+          document.documentElement.scrollTop || document.body.scrollTop,
+        scrollHeight =
+          document.documentElement.scrollHeight ||
+          document.body.scrollHeight,
+        clientHeight =
+          document.documentElement.clientHeight ||
+          document.body.clientHeight;
+      isRunning = false;
+      if (scrollTop <= 1) {
+        updateIconToTop(0);
+        return;
+      }
+      if (scrollTop + clientHeight >= scrollHeight) {
+        updateIconToTop(100);
+      } else {
+        updateIconToTop(parseInt(
+          100 * scrollTop / (scrollHeight - clientHeight),
+          10
+        ));
+      }
+    });
+  };
+}
+
+const backToTop = () => {
+  let scrollTop =
+      document.documentElement.scrollTop || document.body.scrollTop,
+    delay = 10,
+    time = 200;
+  if (scrollTop <= 20) {
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    return;
+  }
+  let step = Math.ceil(scrollTop * delay / time);
+  let timer = setInterval(() => {
+    scrollTop =
+      document.documentElement.scrollTop || document.body.scrollTop;
+    if (scrollTop - step <= 0) {
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      clearInterval(timer);
+    } else {
+      document.documentElement.scrollTop = scrollTop - step;
+      document.body.scrollTop = scrollTop - step;
+    }
+  }, delay);
+}
+
+document.addEventListener("scroll", handleScoll(), false);
+
+document.querySelector(".back-to-top").addEventListener("click", backToTop, false);
+
+</script>
+
+    </div>
+
+    
+      <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML" async></script>
+<script>
+  (() => {
+    const mathjaxConfig = {
+      showProcessingMessages: false, //关闭js加载过程信息
+      messageStyle: "none", //不显示信息
+      jax: ["input/TeX", "output/HTML-CSS"],
+      tex2jax: {
+        inlineMath: [["$", "$"], ["\\(", "\\)"]], //行内公式选择符
+        displayMath: [["$$", "$$"], ["\\[", "\\]"]], //段内公式选择符
+        skipTags: ["script", "noscript", "style", "textarea", "pre", "code", "a"] //避开某些标签
+      },
+      "HTML-CSS": {
+        availableFonts: ["STIX", "TeX"], //可选字体
+        showMathMenu: false //关闭右击菜单显示
+      }
+    }
+
+    let mathjaxInterval = setInterval(() => {
+      if(!window.MathJax){
+        return;
+      }
+      window.MathJax.Hub.Config(mathjaxConfig)
+      window.MathJax.Hub.Queue(["Typeset", MathJax.Hub, document.getElementById('app')])
+
+      clearInterval(mathjaxInterval)
+    }, 10)    
+  })()
+</script>
+    
+
+    <script src="https://cdn.bootcss.com/fancybox/3.5.2/jquery.fancybox.min.js" async></script>
+<script async>
+  let fancyTimer = setInterval(function(){
+    if(!window.$){
+      return;
+    }
+    $(document).ready(function() {
+      $(".post img").each(function () {
+        if($(this).parent().get(0).tagName.toLowerCase() === "a") {
+          return;
+        }
+        // $(this).attr("data-fancybox", "gallery"); // if you add 'data-fancybox', img will display after showed
+        var element = document.createElement("a");
+        $(element).attr("data-fancybox", "gallery");
+        $(element).attr("href", $(this).attr("src"));
+        $(this).wrap(element);
+      });
+      
+      clearInterval(fancyTimer);
+    });
+  }, 10);
+</script>
+
+    
+  </body>
+
+</html>

@@ -1,0 +1,204 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  <title>hdfs-proxy | 鱼的记忆</title>
+
+  
+  <meta name="author" content="比特鱼">
+  
+
+  
+  <meta name="description" content="一些速记与思考，避免知识的遗忘">
+  
+
+  
+  <meta name="keywords" content="Kubernetes, Kubeflow, Golang, Java">
+  
+
+  <meta id="viewport" name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+
+  <meta property="og:title" content="hdfs-proxy"/>
+
+  <meta property="og:site_name" content="鱼的记忆"/>
+
+  
+  <meta property="og:image" content="/favicon.ico"/>
+  
+
+  <link href="/favicon.ico" rel="icon">
+  <link rel="alternate" href="/atom.xml" title="鱼的记忆" type="application/atom+xml">
+  <link rel="stylesheet" href="/css/style.css" media="screen" type="text/css">
+<meta name="generator" content="Hexo 7.1.1"></head>
+
+
+<body>
+<div class="blog">
+  <div class="content">
+
+    <header>
+  <div class="site-branding">
+    <h1 class="site-title">
+      <a href="/">鱼的记忆</a>
+    </h1>
+    <p class="site-description"></p>
+  </div>
+  <nav class="site-navigation">
+    <ul>
+      
+    </ul>
+  </nav>
+</header>
+
+    <main class="site-main posts-loop">
+    <article>
+
+  
+    
+    <h3 class="article-title"><span>hdfs-proxy</span></h3>
+    
+  
+
+  <div class="article-top-meta">
+    <span class="posted-on">
+      <a href="/passages/hdfs-proxy/" rel="bookmark">
+        <time class="entry-date published" datetime="2019-12-23T14:23:26.000Z">
+          2019-12-23
+        </time>
+      </a>
+    </span>
+  </div>
+
+
+  
+
+  <div class="article-content">
+    <div class="entry">
+      
+        <h1 id="HDFS-Proxy-技术梳理"><a href="#HDFS-Proxy-技术梳理" class="headerlink" title="HDFS-Proxy 技术梳理"></a>HDFS-Proxy 技术梳理</h1><h2 id="问题背景"><a href="#问题背景" class="headerlink" title="问题背景"></a>问题背景</h2><p>来自某个需求，希望数据平台可以支持多个不同版本不同认证方式的Hadoop集群。</p>
+<p>由于Kerberos的认证是进程级别有效的，因此无法在多线程环境下支持对多Hadoop集群的访问支持。</p>
+<p>为了解决多个模块对HDFS的访问需求，因此设计HDFS Proxy模块，透明无侵入地解决这个问题。</p>
+<h2 id="设计目标（按重要性排序）"><a href="#设计目标（按重要性排序）" class="headerlink" title="设计目标（按重要性排序）"></a>设计目标（按重要性排序）</h2><ol>
+<li>兼容FileSystem接口，尽量减少接入方的改动成本</li>
+<li>保证性能，减少Proxy环节的性能损耗</li>
+<li>可扩展性，对于集群数量与流量负载都能保持线性可扩展</li>
+<li>完整的Log&#x2F;Tracing&#x2F;Metrics信息，减少服务运行状态的不透明</li>
+<li>保持异常信息，在客户端还原服务端捕获到的异常</li>
+<li>不保证线程安全，虽然有一定的锁保护，但不支持多线程同时访问一个FS实例</li>
+</ol>
+<span id="more"></span>
+
+<h2 id="实现功能"><a href="#实现功能" class="headerlink" title="实现功能"></a>实现功能</h2><h3 id="1-SDK"><a href="#1-SDK" class="headerlink" title="1. SDK"></a>1. SDK</h3><ul>
+<li><p>作为一个Jar包集成在模块中，实现HDFS FileSystem接口，使得模块可以透明对接多个HDFS集群</p>
+</li>
+<li><p>从请求上下文中获取HDFS集群ID，实现基于HDFS 集群ID的Proxy服务发现</p>
+</li>
+<li><p>反序列化异常栈，正确抛出异常</p>
+</li>
+</ul>
+<h3 id="2-Proxy"><a href="#2-Proxy" class="headerlink" title="2. Proxy"></a>2. Proxy</h3><ul>
+<li>代理对单个HDFS集群的接口访问</li>
+<li>实现基于HDFS集群ID的服务注册</li>
+<li>基于Session的资源回收，避免由于客户端崩溃&#x2F;网络故障等原因导致服务端资源泄露</li>
+<li>捕捉并序列化异常，回传到SDK</li>
+</ul>
+<h2 id="设计思路与折衷"><a href="#设计思路与折衷" class="headerlink" title="设计思路与折衷"></a>设计思路与折衷</h2><ul>
+<li>接口兼容与代码入侵</li>
+</ul>
+<p>FileSystem接口支持通过配置文件的方式指定底层的实现类，保护了底层具体实现与上层代码的分离解耦。</p>
+<p>因此，只需要在配置文件中指定用SDK中的类作为FileSystem的实现，就可以启用Proxy，入侵比较小。</p>
+<ul>
+<li>RPC协议的性能</li>
+</ul>
+<ol>
+<li>REST接口，简单方便，文本便于阅读，也便于开发与测试</li>
+<li>gRPC协议，基于HTTP2+Protobuf3，性能良好</li>
+</ol>
+<p>选择gPRC协议</p>
+<ul>
+<li>可扩展性</li>
+</ul>
+<p>利用K8S提供的负载均衡机制，可以保证对请求负载的良好扩展性。</p>
+<p>利用K8S提供的服务发现机制，可以保证对接多个Hadoop集群的扩展性。</p>
+<ul>
+<li>Log&#x2F;Tracing&#x2F;Metrics支持</li>
+</ul>
+<p>gRPC协议支持OpenTracing，而Log与Metrics可以在SDK中添加</p>
+<ul>
+<li>异常信息还原</li>
+</ul>
+<p>为了能在客户端还原出服务端捕获的异常信息，我们需要将堆栈信息序列化传输到客户端，并在客户端反序列化</p>
+<ul>
+<li>超时资源回收</li>
+</ul>
+<p>Proxy服务端可以在后台运行一个GC线程定期进行资源回收，避免泄露</p>
+<ul>
+<li>优化</li>
+</ul>
+<p>Buffer可以提高读性能，流式接口可以适应大数据块，gRPC连接可以保持复用</p>
+<h2 id="其他"><a href="#其他" class="headerlink" title="其他"></a>其他</h2><p>与此相似，后来还补充实现了HiveProxy，在原有的框架基础上添加几个方法就可以了</p>
+<p>这里只记录大致思路，具体协议与代码细节就不细说了</p>
+
+      
+    </div>
+
+  </div>
+
+  <div class="article-footer">
+    <div class="article-meta pull-left">
+
+    
+      
+
+    <span class="post-categories">
+      <i class="icon-categories"></i>
+        <a href="/categories/技术/">技术</a>, <a href="/categories/技术/Java/">Java</a>, <a href="/categories/技术/Java/Hadoop/">Hadoop</a>
+    </span>
+    
+
+    
+    
+
+    <span class="post-tags">
+      <i class="icon-tags"></i>
+        <a href="/tags/Java/">Java</a><a href="/tags/大数据/">大数据</a>
+    </span>
+    
+
+    </div>
+
+    
+  </div>
+</article>
+
+  
+
+
+
+
+
+
+
+
+
+    </main>
+
+    <footer class="site-footer">
+  <p class="site-info">
+    Proudly powered by <a href="https://hexo.io/" target="_blank">Hexo</a> and
+    Theme by <a href="https://github.com/CodeDaraW/Hacker" target="_blank">Hacker</a>
+    </br>
+    
+    &copy; 2024 比特鱼
+    
+  </p>
+</footer>
+    
+    
+  </div>
+</div>
+</body>
+</html>

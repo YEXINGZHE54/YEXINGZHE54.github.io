@@ -1,0 +1,168 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  <title>golang-http-client-time-wait | 鱼的记忆</title>
+
+  
+  <meta name="author" content="比特鱼">
+  
+
+  
+  <meta name="description" content="一些速记与思考，避免知识的遗忘">
+  
+
+  
+  <meta name="keywords" content="Kubernetes, Kubeflow, Golang, Java">
+  
+
+  <meta id="viewport" name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+
+  <meta property="og:title" content="golang-http-client-time-wait"/>
+
+  <meta property="og:site_name" content="鱼的记忆"/>
+
+  
+  <meta property="og:image" content="/favicon.ico"/>
+  
+
+  <link href="/favicon.ico" rel="icon">
+  <link rel="alternate" href="/atom.xml" title="鱼的记忆" type="application/atom+xml">
+  <link rel="stylesheet" href="/css/style.css" media="screen" type="text/css">
+<meta name="generator" content="Hexo 7.1.1"></head>
+
+
+<body>
+<div class="blog">
+  <div class="content">
+
+    <header>
+  <div class="site-branding">
+    <h1 class="site-title">
+      <a href="/">鱼的记忆</a>
+    </h1>
+    <p class="site-description"></p>
+  </div>
+  <nav class="site-navigation">
+    <ul>
+      
+    </ul>
+  </nav>
+</header>
+
+    <main class="site-main posts-loop">
+    <article>
+
+  
+    
+    <h3 class="article-title"><span>golang-http-client-time-wait</span></h3>
+    
+  
+
+  <div class="article-top-meta">
+    <span class="posted-on">
+      <a href="/passages/golang-http-client-time-wait/" rel="bookmark">
+        <time class="entry-date published" datetime="2019-04-16T02:05:08.000Z">
+          2019-04-16
+        </time>
+      </a>
+    </span>
+  </div>
+
+
+  
+
+  <div class="article-content">
+    <div class="entry">
+      
+        <h1 id="Golang-HTTP-客户端连接池的性能问题"><a href="#Golang-HTTP-客户端连接池的性能问题" class="headerlink" title="Golang HTTP 客户端连接池的性能问题"></a>Golang HTTP 客户端连接池的性能问题</h1><p>前一阵子使用Golang在开发一个微服务，通过HTTP协议与其他依赖模块交互。当时测试时遇到了一个性能问题，现在记录一下，以做备忘。</p>
+<h2 id="问题模型"><a href="#问题模型" class="headerlink" title="问题模型"></a>问题模型</h2><p>服务端代码：</p>
+<span id="more"></span>
+
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;io/ioutil&quot;</span></span><br><span class="line">	<span class="string">&quot;net/http&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">const</span> (</span><br><span class="line">	BACKEND = <span class="string">&quot;http://www.baidu.com&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Handle</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">	resp, err := http.Get(BACKEND)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		w.WriteHeader(<span class="number">500</span>)</span><br><span class="line">		w.Write([]<span class="type">byte</span>(err.Error()))</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">defer</span> resp.Body.Close()</span><br><span class="line">	buf, _ := ioutil.ReadAll(resp.Body)</span><br><span class="line">	w.WriteHeader(<span class="number">200</span>)</span><br><span class="line">	w.Write(buf)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span>  &#123;</span><br><span class="line">	http.HandleFunc(<span class="string">&quot;/&quot;</span>, Handle)</span><br><span class="line">	http.ListenAndServe(<span class="string">&quot;:8080&quot;</span>, <span class="literal">nil</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>客户端代码：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;io/ioutil&quot;</span></span><br><span class="line">	<span class="string">&quot;log&quot;</span></span><br><span class="line">	<span class="string">&quot;net/http&quot;</span></span><br><span class="line">	<span class="string">&quot;sync&quot;</span></span><br><span class="line">	<span class="string">&quot;sync/atomic&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span>  &#123;</span><br><span class="line">	url := <span class="string">&quot;http://localhost:8080&quot;</span></span><br><span class="line">	dur := <span class="number">1000</span> * time.Millisecond</span><br><span class="line">	<span class="keyword">var</span> wg sync.WaitGroup</span><br><span class="line">	<span class="keyword">var</span> count <span class="type">uint64</span></span><br><span class="line">	<span class="keyword">for</span> i := <span class="number">0</span>; i &lt; <span class="number">10</span>; i = i + <span class="number">1</span> &#123;</span><br><span class="line">		<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">(url <span class="type">string</span>, i <span class="type">int</span>)</span></span> &#123;</span><br><span class="line">			wg.Add(<span class="number">1</span>)</span><br><span class="line">			<span class="keyword">defer</span> wg.Done()</span><br><span class="line">			<span class="keyword">for</span> &#123;</span><br><span class="line">				time.Sleep(dur)</span><br><span class="line">				resp, err := http.Get(url)</span><br><span class="line">				<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">					<span class="keyword">continue</span></span><br><span class="line">				&#125;</span><br><span class="line">				ioutil.ReadAll(resp.Body)</span><br><span class="line">				resp.Body.Close()</span><br><span class="line">				atomic.AddUint64(&amp;count, <span class="number">1</span>)</span><br><span class="line">				<span class="comment">//log.Printf(&quot;routine %d read successfully\n&quot;,  i)</span></span><br><span class="line">			&#125;</span><br><span class="line">		&#125;(url, i)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">		<span class="keyword">var</span> last <span class="type">uint64</span></span><br><span class="line">		<span class="keyword">for</span> &#123;</span><br><span class="line">			last = count</span><br><span class="line">			time.Sleep(time.Second)</span><br><span class="line">			log.Printf(<span class="string">&quot;current count delta: %d\n&quot;</span>, count - last)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;()</span><br><span class="line">	wg.Wait()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>（Mac）操作系统上观察到的现象：</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">➜  playground lsof -nP -iTCP@61.135.169.121:80</span><br><span class="line">COMMAND     PID       USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME</span><br><span class="line">___go_bui 40920 zhaoxingli    6u  IPv4 0xe8bf53cced43833f      0t0  TCP 192.168.199.102:59014-&gt;61.135.169.121:80 (ESTABLISHED)</span><br><span class="line">___go_bui 40920 zhaoxingli   10u  IPv4 0xe8bf53cce7d15d3f      0t0  TCP 192.168.199.102:59005-&gt;61.135.169.121:80 (ESTABLISHED)</span><br><span class="line">➜  playground lsof -nP -iTCP@61.135.169.121:80</span><br><span class="line">COMMAND     PID       USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME</span><br><span class="line">___go_bui 40920 zhaoxingli    6u  IPv4 0xe8bf53cced43833f      0t0  TCP 192.168.199.102:59014-&gt;61.135.169.121:80 (ESTABLISHED)</span><br><span class="line">___go_bui 40920 zhaoxingli    8u  IPv4 0xe8bf53cce35fa33f      0t0  TCP 192.168.199.102:59022-&gt;61.135.169.121:80 (ESTABLISHED)</span><br><span class="line">___go_bui 40920 zhaoxingli   10u  IPv4 0xe8bf53cce7d15d3f      0t0  TCP 192.168.199.102:59005-&gt;61.135.169.121:80 (ESTABLISHED)</span><br><span class="line">➜  playground lsof -nP -iTCP@61.135.169.121:80</span><br><span class="line">COMMAND     PID       USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME</span><br><span class="line">___go_bui 40920 zhaoxingli    6u  IPv4 0xe8bf53cced43833f      0t0  TCP 192.168.199.102:59014-&gt;61.135.169.121:80 (ESTABLISHED)</span><br><span class="line">___go_bui 40920 zhaoxingli    8u  IPv4 0xe8bf53cce35fa33f      0t0  TCP 192.168.199.102:59022-&gt;61.135.169.121:80 (ESTABLISHED)</span><br><span class="line">➜  playground </span><br></pre></td></tr></table></figure>
+
+<p>上面是我在本地Mac上做的实验，分别贴了服务端与测试客户端代码。由上图可以看到，服务端收到10个并发请求并代理到后端<a href="www.baidu.com">baidu</a>。但问题是，服务端与<a href="www.baidu.com">baidu</a>之间的连接池却不是稳定的长连接，有的连接刚刚建立，有的一会儿就断开了，似乎长连接在这里并没有实际起作用？而在实际生产环境中，还能看到主机上的TIME_WAIT连接数在一直上升，这里就不贴实际代码和细节了。</p>
+<h2 id="寻找原因"><a href="#寻找原因" class="headerlink" title="寻找原因"></a>寻找原因</h2><p>经过Google搜索，发现golang HTTP Client的这个连接池问题已经有很多人吐槽过了，原因也很简单: 在HTTP库中有个Transport结构体，提供了底层的连接池，这个结构体中有个字段用于控制每个远端节点最大空闲连接数量默认为2（超出的部分就要释放，因此长连接便退化成了短链接）</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// DefaultTransport is the default implementation of Transport and is</span></span><br><span class="line"><span class="comment">// used by DefaultClient. It establishes network connections as needed</span></span><br><span class="line"><span class="comment">// and caches them for reuse by subsequent calls. It uses HTTP proxies</span></span><br><span class="line"><span class="comment">// as directed by the $HTTP_PROXY and $NO_PROXY (or $http_proxy and</span></span><br><span class="line"><span class="comment">// $no_proxy) environment variables.</span></span><br><span class="line"><span class="keyword">var</span> DefaultTransport RoundTripper = &amp;Transport&#123;</span><br><span class="line">	Proxy: ProxyFromEnvironment,</span><br><span class="line">	DialContext: (&amp;net.Dialer&#123;</span><br><span class="line">		Timeout:   <span class="number">30</span> * time.Second,</span><br><span class="line">		KeepAlive: <span class="number">30</span> * time.Second,</span><br><span class="line">		DualStack: <span class="literal">true</span>,</span><br><span class="line">	&#125;).DialContext,</span><br><span class="line">	MaxIdleConns:          <span class="number">100</span>,</span><br><span class="line">	IdleConnTimeout:       <span class="number">90</span> * time.Second,</span><br><span class="line">	TLSHandshakeTimeout:   <span class="number">10</span> * time.Second,</span><br><span class="line">	ExpectContinueTimeout: <span class="number">1</span> * time.Second,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// DefaultMaxIdleConnsPerHost is the default value of Transport&#x27;s</span></span><br><span class="line"><span class="comment">// MaxIdleConnsPerHost.</span></span><br><span class="line"><span class="keyword">const</span> DefaultMaxIdleConnsPerHost = <span class="number">2</span></span><br><span class="line">...</span><br><span class="line"><span class="keyword">type</span> Transport <span class="keyword">struct</span> &#123;</span><br><span class="line">...</span><br><span class="line">	<span class="comment">// MaxIdleConnsPerHost, if non-zero, controls the maximum idle</span></span><br><span class="line">	<span class="comment">// (keep-alive) connections to keep per-host. If zero,</span></span><br><span class="line">	<span class="comment">// DefaultMaxIdleConnsPerHost is used.</span></span><br><span class="line">	MaxIdleConnsPerHost <span class="type">int</span></span><br><span class="line">	...</span><br><span class="line">&#125;</span><br><span class="line">...</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(t *Transport)</span></span> maxIdleConnsPerHost() <span class="type">int</span> &#123;</span><br><span class="line">	<span class="keyword">if</span> v := t.MaxIdleConnsPerHost; v != <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> v</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> DefaultMaxIdleConnsPerHost</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>当我们使用http.Get方法的时候，通过默认HTTP Client调用了默认Transport，因此连接数量也受这里的DefaultMaxIdleConnsPerHost所限制。</p>
+<p>那么，在实际的HTTP请求过程中，这个MaxIdleConnsPerHost是如何导致长连接退化成短链接的呢？请看代码：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// tryPutIdleConn adds pconn to the list of idle persistent connections awaiting</span></span><br><span class="line"><span class="comment">// a new request.</span></span><br><span class="line"><span class="comment">// If pconn is no longer needed or not in a good state, tryPutIdleConn returns</span></span><br><span class="line"><span class="comment">// an error explaining why it wasn&#x27;t registered.</span></span><br><span class="line"><span class="comment">// tryPutIdleConn does not close pconn. Use putOrCloseIdleConn instead for that.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(t *Transport)</span></span> tryPutIdleConn(pconn *persistConn) <span class="type">error</span> &#123;</span><br><span class="line">	...</span><br><span class="line">  key := pconn.cacheKey</span><br><span class="line">  ...</span><br><span class="line">	idles := t.idleConn[key]</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(idles) &gt;= t.maxIdleConnsPerHost() &#123;</span><br><span class="line">		<span class="keyword">return</span> errTooManyIdleHost</span><br><span class="line">	&#125;</span><br><span class="line">	...</span><br><span class="line">  <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>当并发量大的情况下，连接池会创建较多的TCP连接，并且在请求完成以后连接池尝试通过tryPutIdleConn归还空闲连接。从代码中可以看出，对于超出maxIdleConnsPerHost数量的空闲长连接都不能再放回连接池了，因此这些长连接也只好将其关闭了。</p>
+<h2 id="解决方案"><a href="#解决方案" class="headerlink" title="解决方案"></a>解决方案</h2><p>知道了问题的源头，解决也就简单了：创建新的HTTP Client，设置它的maxIdleConnsPerHost就行了。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">defaultRoundTripper := http.DefaultTransport</span><br><span class="line"> defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)</span><br><span class="line"> <span class="keyword">if</span> !ok &#123;</span><br><span class="line">     <span class="built_in">panic</span>(fmt.Sprintf(<span class="string">&quot;defaultRoundTripper not an *http.Transport&quot;</span>))</span><br><span class="line"> &#125;</span><br><span class="line"> defaultTransport := *defaultTransportPointer <span class="comment">// dereference it to get a copy of the struct that the pointer points to</span></span><br><span class="line"> defaultTransport.MaxIdleConns = <span class="number">100</span></span><br><span class="line"> defaultTransport.MaxIdleConnsPerHost = <span class="number">100</span></span><br><span class="line"></span><br><span class="line">myClient := &amp;http.Client&#123;Transport: &amp;defaultTransport&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+<h2 id="结论"><a href="#结论" class="headerlink" title="结论"></a>结论</h2><p>遇到问题要灵活运用基础知识，大胆试验。</p>
+
+      
+    </div>
+
+  </div>
+
+  <div class="article-footer">
+    <div class="article-meta pull-left">
+
+    
+      
+
+    <span class="post-categories">
+      <i class="icon-categories"></i>
+        <a href="/categories/技术/">技术</a>, <a href="/categories/技术/Golang/">Golang</a>
+    </span>
+    
+
+    
+    
+
+    <span class="post-tags">
+      <i class="icon-tags"></i>
+        <a href="/tags/Golang/">Golang</a><a href="/tags/HTTP/">HTTP</a><a href="/tags/TIME-WAIT/">TIME_WAIT</a>
+    </span>
+    
+
+    </div>
+
+    
+  </div>
+</article>
+
+  
+
+
+
+
+
+
+
+
+
+    </main>
+
+    <footer class="site-footer">
+  <p class="site-info">
+    Proudly powered by <a href="https://hexo.io/" target="_blank">Hexo</a> and
+    Theme by <a href="https://github.com/CodeDaraW/Hacker" target="_blank">Hacker</a>
+    </br>
+    
+    &copy; 2024 比特鱼
+    
+  </p>
+</footer>
+    
+    
+  </div>
+</div>
+</body>
+</html>

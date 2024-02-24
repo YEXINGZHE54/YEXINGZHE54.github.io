@@ -1,0 +1,161 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  <title>druid-connection-retry-loop-and-block | 鱼的记忆</title>
+
+  
+  <meta name="author" content="比特鱼">
+  
+
+  
+  <meta name="description" content="一些速记与思考，避免知识的遗忘">
+  
+
+  
+  <meta name="keywords" content="Kubernetes, Kubeflow, Golang, Java">
+  
+
+  <meta id="viewport" name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+
+  <meta property="og:title" content="druid-connection-retry-loop-and-block"/>
+
+  <meta property="og:site_name" content="鱼的记忆"/>
+
+  
+  <meta property="og:image" content="/favicon.ico"/>
+  
+
+  <link href="/favicon.ico" rel="icon">
+  <link rel="alternate" href="/atom.xml" title="鱼的记忆" type="application/atom+xml">
+  <link rel="stylesheet" href="/css/style.css" media="screen" type="text/css">
+<meta name="generator" content="Hexo 7.1.1"></head>
+
+
+<body>
+<div class="blog">
+  <div class="content">
+
+    <header>
+  <div class="site-branding">
+    <h1 class="site-title">
+      <a href="/">鱼的记忆</a>
+    </h1>
+    <p class="site-description"></p>
+  </div>
+  <nav class="site-navigation">
+    <ul>
+      
+    </ul>
+  </nav>
+</header>
+
+    <main class="site-main posts-loop">
+    <article>
+
+  
+    
+    <h3 class="article-title"><span>druid-connection-retry-loop-and-block</span></h3>
+    
+  
+
+  <div class="article-top-meta">
+    <span class="posted-on">
+      <a href="/passages/druid-connection-retry-loop-and-block/" rel="bookmark">
+        <time class="entry-date published" datetime="2019-04-09T16:05:08.000Z">
+          2019-04-10
+        </time>
+      </a>
+    </span>
+  </div>
+
+
+  
+
+  <div class="article-content">
+    <div class="entry">
+      
+        <h1 id="Alibaba-Druid-无限次重试报错并阻塞业务线程"><a href="#Alibaba-Druid-无限次重试报错并阻塞业务线程" class="headerlink" title="Alibaba&#x2F;Druid 无限次重试报错并阻塞业务线程"></a>Alibaba&#x2F;Druid 无限次重试报错并阻塞业务线程</h1><p><a href="https://github.com/alibaba/druid">Alibaba&#x2F;Druid</a> 是一个广受欢迎的开源数据库连接池组件。但是，由于配置不当，也会对服务稳定性产生负面影响。</p>
+<p>我们的某个服务提供了一个功能，可以帮助用户随机预览给定数据源上的表数据。但是，当用户提供了错误的IP&#x2F;Port信息，或者错误的授权信息，或者错误的数据库协议的时候，服务接口未能及时响应，最后网关报504超时，影响用户体验。</p>
+<h2 id="查看日志"><a href="#查看日志" class="headerlink" title="查看日志"></a>查看日志</h2><p>为了优化这个环节，我们先查看了应用的异常日志，发现应用仍然在不断的抛出连接失败的异常，并且，抛出异常的线程不是HTTP Worker线程，而是名为Druid-ConnectionPool-Create-XXX的线程。详细如下：</p>
+<span id="more"></span>
+
+<p><img src="/images/druid-exceptions.png" alt="ConnectionPoolException"></p>
+<p>其实后面还有两行，只是当时没有截出来：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">at com.alibaba.druid.pool.DruidAbstractDataSource.createPhysicalConnection(DruidAbstractDataSource.java:<span class="number">1623</span>)</span><br><span class="line">at com.alibaba.druid.pool.DruidDataSource$CreateConnectionThread.run(DruidDataSource.java:<span class="number">2468</span>)</span><br></pre></td></tr></table></figure>
+
+<p>看来问题是出在 CreateConnectionThread.run 这个方法上，估计应该是没有正确的配置重试&#x2F;熔断策略，以至于Druid无限重连并且在日志中抛出异常。接着，翻开了 DruidDataSource 的代码，并且定位到 run 代码（简化）：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> (;;) &#123;</span><br><span class="line">			<span class="comment">// skipped</span></span><br><span class="line">			<span class="type">PhysicalConnectionInfo</span> <span class="variable">physicalConnection</span> <span class="operator">=</span> <span class="literal">null</span>;</span><br><span class="line">							 <span class="keyword">try</span> &#123;</span><br><span class="line">                    physicalConnection = createPhysicalConnection();</span><br><span class="line">                &#125; <span class="keyword">catch</span> (OutOfMemoryError e) &#123;</span><br><span class="line">                    <span class="comment">// skipped</span></span><br><span class="line">                &#125; <span class="keyword">catch</span> (SQLException e) &#123;</span><br><span class="line">                    LOG.error(<span class="string">&quot;create connection SQLException, url: &quot;</span> + jdbcUrl, e);</span><br><span class="line"></span><br><span class="line">                    errorCount++;</span><br><span class="line">                    <span class="keyword">if</span> (errorCount &gt; connectionErrorRetryAttempts &amp;&amp; timeBetweenConnectErrorMillis &gt; <span class="number">0</span>) &#123;</span><br><span class="line">                        <span class="comment">// fail over retry attempts</span></span><br><span class="line">                        setFailContinuous(<span class="literal">true</span>);</span><br><span class="line">                    		<span class="keyword">if</span> (failFast) &#123;</span><br><span class="line">                        	lock.lock();</span><br><span class="line">                        	<span class="keyword">try</span> &#123;</span><br><span class="line">                            notEmpty.signalAll();</span><br><span class="line">                        	&#125; <span class="keyword">finally</span> &#123;</span><br><span class="line">                            lock.unlock();</span><br><span class="line">                        	&#125;</span><br><span class="line">                    		&#125;</span><br><span class="line">                    		<span class="keyword">if</span> (breakAfterAcquireFailure) &#123;</span><br><span class="line">                        	<span class="keyword">break</span>;</span><br><span class="line">                    		&#125;</span><br><span class="line">                    		<span class="keyword">try</span> &#123;</span><br><span class="line">                        	Thread.sleep(timeBetweenConnectErrorMillis);</span><br><span class="line">                    		&#125; <span class="keyword">catch</span> (InterruptedException interruptEx) &#123;</span><br><span class="line">                        	<span class="keyword">break</span>;</span><br><span class="line">                    		&#125;</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br><span class="line">                <span class="comment">// skip other Exception Handling</span></span><br><span class="line">                <span class="keyword">if</span> (physicalConnection == <span class="literal">null</span>) &#123;</span><br><span class="line">                    <span class="keyword">continue</span>;</span><br><span class="line">                &#125;</span><br><span class="line"></span><br><span class="line">                <span class="type">boolean</span> <span class="variable">result</span> <span class="operator">=</span> put(physicalConnection);</span><br><span class="line">                <span class="keyword">if</span> (!result) &#123;</span><br><span class="line">                    JdbcUtils.close(physicalConnection.getPhysicalConnection());</span><br><span class="line">                    LOG.info(<span class="string">&quot;put physical connection to pool failed.&quot;</span>);</span><br><span class="line">                &#125;</span><br><span class="line">                <span class="keyword">break</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>大致的代码流程：</p>
+<p><img src="/images/druid-connection-flowchart.png" alt="ConnectionPoolException"></p>
+<p>从上面的介绍可以看出，一般只有正确获取到数据库连接或者设置breakAfterAcquireFailure&#x3D;true才能跳出这个for循环（InterruptedException 不考虑）。但是，从代码中可以看到，breakAfterAcquireFailure的默认值是false，因此要想结束这个，就只有手动设置 breakAfterAcquireFailure&#x3D;true。后来，从github上也搜索到了一条相关issue，发现大家也遇到了和我一样的问题：<a href="https://github.com/alibaba/druid/issues/2679">无限重连错误</a>。</p>
+<p>因此，在代码中加入了设置breakAfterAcquireFailure&#x3D;true的逻辑，应用日志中果然不再反复抛出同一个异常了。但是，测试过程中发现，问题仍然没有得到完整的解决，服务接口仍然未能及时响应，最后网关还是会报504超时错误，这里面还有我们没考虑到的地方。</p>
+<h2 id="使用Jstack调试"><a href="#使用Jstack调试" class="headerlink" title="使用Jstack调试"></a>使用Jstack调试</h2><p>由于服务接口一直都没能及时返回响应，因此很直观的一个思路就是希望可以看看这个HTTP Worker线程在做什么，这时候Jstack命令就可以派上用场了。</p>
+<p>通过jstack命令，发现http线程停留在drui库的takelast调用里，被阻塞住了。后来打开代码查看才知道，原来线程是在等待 notEmpty.await() 调用返回。从代码追踪可以知道，notEmpty是一个条件变量，druid线程中直接break循环是不会触发notEmpty的signalAll()方法，因此http线程也无法从条件变量中唤醒运行，因此接口就会一直无法提供响应。并且，随着调用次数的增多，越来越多的线程陷入阻塞状态，最终将没有线程资源可以提供服务。</p>
+<p>因此，又在代码中加入了设置failFast&#x3D;true的逻辑，这样http线程就可以在重试多次失败以后迅速被唤醒，及时返回错误信息，并且继续提供服务。至此，没有无限重连报错，线程也不再阻塞，问题得到彻底解决。</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>出现问题的时候大胆假设，小心求证，灵活运用基础知识与调试工具，多一些耐心。</p>
+
+      
+    </div>
+
+  </div>
+
+  <div class="article-footer">
+    <div class="article-meta pull-left">
+
+    
+      
+
+    <span class="post-categories">
+      <i class="icon-categories"></i>
+        <a href="/categories/技术/">技术</a>, <a href="/categories/技术/JDBC/">JDBC</a>
+    </span>
+    
+
+    
+    
+
+    <span class="post-tags">
+      <i class="icon-tags"></i>
+        <a href="/tags/Java/">Java</a><a href="/tags/Debug/">Debug</a><a href="/tags/Druid/">Druid</a><a href="/tags/Block/">Block</a>
+    </span>
+    
+
+    </div>
+
+    
+  </div>
+</article>
+
+  
+
+
+
+
+
+
+
+
+
+    </main>
+
+    <footer class="site-footer">
+  <p class="site-info">
+    Proudly powered by <a href="https://hexo.io/" target="_blank">Hexo</a> and
+    Theme by <a href="https://github.com/CodeDaraW/Hacker" target="_blank">Hacker</a>
+    </br>
+    
+    &copy; 2024 比特鱼
+    
+  </p>
+</footer>
+    
+    
+  </div>
+</div>
+</body>
+</html>

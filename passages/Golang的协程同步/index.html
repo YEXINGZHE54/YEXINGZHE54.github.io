@@ -1,0 +1,161 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  <title>Golang的协程同步 | 鱼的记忆</title>
+
+  
+  <meta name="author" content="比特鱼">
+  
+
+  
+  <meta name="description" content="一些速记与思考，避免知识的遗忘">
+  
+
+  
+  <meta name="keywords" content="Kubernetes, Kubeflow, Golang, Java">
+  
+
+  <meta id="viewport" name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+
+  <meta property="og:title" content="Golang的协程同步"/>
+
+  <meta property="og:site_name" content="鱼的记忆"/>
+
+  
+  <meta property="og:image" content="/favicon.ico"/>
+  
+
+  <link href="/favicon.ico" rel="icon">
+  <link rel="alternate" href="/atom.xml" title="鱼的记忆" type="application/atom+xml">
+  <link rel="stylesheet" href="/css/style.css" media="screen" type="text/css">
+<meta name="generator" content="Hexo 7.1.1"></head>
+
+
+<body>
+<div class="blog">
+  <div class="content">
+
+    <header>
+  <div class="site-branding">
+    <h1 class="site-title">
+      <a href="/">鱼的记忆</a>
+    </h1>
+    <p class="site-description"></p>
+  </div>
+  <nav class="site-navigation">
+    <ul>
+      
+    </ul>
+  </nav>
+</header>
+
+    <main class="site-main posts-loop">
+    <article>
+
+  
+    
+    <h3 class="article-title"><span>Golang的协程同步</span></h3>
+    
+  
+
+  <div class="article-top-meta">
+    <span class="posted-on">
+      <a href="/passages/Golang的协程同步/" rel="bookmark">
+        <time class="entry-date published" datetime="2020-01-25T16:08:16.000Z">
+          2020-01-26
+        </time>
+      </a>
+    </span>
+  </div>
+
+
+  
+
+  <div class="article-content">
+    <div class="entry">
+      
+        <h2 id="问题背景"><a href="#问题背景" class="headerlink" title="问题背景"></a>问题背景</h2><p>最近遇到了一个BUG，由于对Golang的同步模型理解不够深入所导致的资源泄露。</p>
+<p>伪代码如下：</p>
+<figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> res Connection</span><br><span class="line">done := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="type">bool</span>)</span><br><span class="line"><span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span>&#123;</span><br><span class="line">	<span class="keyword">defer</span> <span class="built_in">close</span>(done)</span><br><span class="line">	res, err := acquire(<span class="number">200</span> * time.Millisecond) <span class="comment">//计数器递增</span></span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		log.Printf(<span class="string">&quot;err: %v&quot;</span>, err) <span class="comment">//第7行，这里报错</span></span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">	doWork(res)</span><br><span class="line">&#125;()</span><br><span class="line"><span class="keyword">select</span> &#123;</span><br><span class="line"> <span class="keyword">case</span> &lt;-done:</span><br><span class="line"> <span class="keyword">case</span> &lt;-time.After(<span class="number">300</span> * time.Millisecond):</span><br><span class="line">&#125;</span><br><span class="line">release(res) <span class="comment">//如果res不等于nil，计数器递减</span></span><br></pre></td></tr></table></figure>
+
+<span id="more"></span>
+
+<p>咋一看来，代码没有逻辑问题。当时我在Review这份代码的时候，直观的感觉是写的不规范，把release和acquire分开到两个不同的routine，容易被遗漏，代码可读性不佳，也就是说代码写的不优雅。但是，同事说服了我，业务逻辑里需要将资源及时释放，因此有必要在超时的时候主动释放这个资源，所以不优雅这个小问题就是可以被容忍的。</p>
+<p>这段代码上线后不久，我们就在业务日志里发现大量“资源耗尽”的错误日志，很容易就定位到这个错误是在代码里的第7行出现，由acquire()抛出的。我们维护了一个“资源计数器”，acquire的时候递增，而release的时候递减，计数器超过阈值的时候就会抛出“资源耗尽”的错误。</p>
+<h2 id="问题排查"><a href="#问题排查" class="headerlink" title="问题排查"></a>问题排查</h2><p>资源耗尽？第一反应是我们的线上流量太大，导致资源使用量超过了计数器的阈值。我们通过netstat检查了连接信息，发现连接数不到个位数，远远未到超过阈值的程度。</p>
+<p>接着，我们还是不死心，希望可以更透明地观察到程序内部的运行状态，确认计数器的状态。于是，我们引入exp&#x2F;var包，这样就可以实时查看计数器，阈值，连接数, inflght request（正在处理的请求数）. 结果发现，抛出错误的时候，计数器与阈值相等，inflght request与连接数差不多且远小于计数器&#x2F;阈值。</p>
+<p>到了这里，我们开始怀疑计数器的实现有问题，可能没有对并发做好控制。检查了acquire&#x2F;release的代码，在读写计数器的时候都正确的加了锁，看起来无懈可击。</p>
+<p>问题到底出在了哪里？我们陷入了苦恼中，直到我们发现其他指标也出现了异常。在我们的服务中，有个在最坏情况下不会超过150毫秒（因为有定时器控制）的延时指标，居然出现了延时达到1秒的情况。机器时钟坏掉或者golang的定时器出现了BUG这种小概率事件暂不考虑，对此比较合理的猜想是CPU过于繁忙，协程调度器的调度时间比较长，导致最后延时指标异常。那么回过头来看我们的代码，在调度异常的情况下会发生什么情况呢？release 可能会发生在 acquire 前，由于release只有在资源非空的情况下才会递减计数器，因此计数器就会在acquire里递增，重复出现几次这样的情况下，计数器就会达到阈值，抛出“资源耗尽”的错误。</p>
+<p>为了维护计数器的正确，必须确保acquire发生在release之前，也就是所谓的<strong>happen-before</strong>。而我们的代码里是希望通过定时器的超时长短来确保<strong>happen-before</strong>，也就是说，超时短的事件一定会提前结束，发生在超时长的事件前。很遗憾，Golang的<strong>happen-before</strong>原则里不包含定时器超时事件，超时不能保证先后顺序。Golang的内存模型具体请参考<a href="https://golang.org/ref/mem">Golang内存模型</a>，简单概括如下：</p>
+<ol>
+<li>init 发生在 main 前，而且根据包的依赖顺序，被依赖方的init发生在依赖方的init前</li>
+<li>对于有buffer的channel，send与close发生在receive前；无buffer的channel，receive发生在send前；没有对有buffer的channel的close事件做说明，待考证</li>
+<li>对于锁，Unlock发生在Lock前</li>
+</ol>
+<h2 id="问题的修复"><a href="#问题的修复" class="headerlink" title="问题的修复"></a>问题的修复</h2><p>因此，要想确保协程间的同步顺序，只能依靠channel或者lock。</p>
+<p>最后，我们对代码做了修复，计数器问题得到了解决：</p>
+<figure class="highlight golang"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> res Connection</span><br><span class="line">done := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="type">bool</span>)</span><br><span class="line">exit := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="type">bool</span>)</span><br><span class="line"><span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span>&#123;</span><br><span class="line">	<span class="keyword">defer</span> <span class="built_in">close</span>(done)</span><br><span class="line">	res, err := acquire(<span class="number">200</span> * time.Millisecond) <span class="comment">//计数器递增</span></span><br><span class="line">	If err != <span class="literal">nil</span> &#123;</span><br><span class="line">		log.Printf(<span class="string">&quot;err: %v&quot;</span>, err)</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// here, setup cleaner</span></span><br><span class="line">	<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">(res Connection)</span></span>&#123;</span><br><span class="line">		&lt;- exit</span><br><span class="line">		release(res)</span><br><span class="line">	&#125;(res) <span class="comment">//catch res</span></span><br><span class="line">	doWork(res)</span><br><span class="line">&#125;()</span><br><span class="line"><span class="keyword">select</span> &#123;</span><br><span class="line"> <span class="keyword">case</span> &lt;-done:</span><br><span class="line"> <span class="keyword">case</span> &lt;-time.After(<span class="number">300</span> * time.Millisecond):</span><br><span class="line">&#125;</span><br><span class="line"><span class="built_in">close</span>(exit) <span class="comment">//notify exit</span></span><br></pre></td></tr></table></figure>
+      
+    </div>
+
+  </div>
+
+  <div class="article-footer">
+    <div class="article-meta pull-left">
+
+    
+      
+
+    <span class="post-categories">
+      <i class="icon-categories"></i>
+        <a href="/categories/技术/">技术</a>, <a href="/categories/技术/Golang/">Golang</a>
+    </span>
+    
+
+    
+    
+
+    <span class="post-tags">
+      <i class="icon-tags"></i>
+        <a href="/tags/Golang/">Golang</a><a href="/tags/内存模型/">内存模型</a>
+    </span>
+    
+
+    </div>
+
+    
+  </div>
+</article>
+
+  
+
+
+
+
+
+
+
+
+
+    </main>
+
+    <footer class="site-footer">
+  <p class="site-info">
+    Proudly powered by <a href="https://hexo.io/" target="_blank">Hexo</a> and
+    Theme by <a href="https://github.com/CodeDaraW/Hacker" target="_blank">Hacker</a>
+    </br>
+    
+    &copy; 2024 比特鱼
+    
+  </p>
+</footer>
+    
+    
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  <title>golang-cpu-profile | 鱼的记忆</title>
+
+  
+  <meta name="author" content="比特鱼">
+  
+
+  
+  <meta name="description" content="一些速记与思考，避免知识的遗忘">
+  
+
+  
+  <meta name="keywords" content="Kubernetes, Kubeflow, Golang, Java">
+  
+
+  <meta id="viewport" name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+
+  <meta property="og:title" content="golang-cpu-profile"/>
+
+  <meta property="og:site_name" content="鱼的记忆"/>
+
+  
+  <meta property="og:image" content="/favicon.ico"/>
+  
+
+  <link href="/favicon.ico" rel="icon">
+  <link rel="alternate" href="/atom.xml" title="鱼的记忆" type="application/atom+xml">
+  <link rel="stylesheet" href="/css/style.css" media="screen" type="text/css">
+<meta name="generator" content="Hexo 7.1.1"></head>
+
+
+<body>
+<div class="blog">
+  <div class="content">
+
+    <header>
+  <div class="site-branding">
+    <h1 class="site-title">
+      <a href="/">鱼的记忆</a>
+    </h1>
+    <p class="site-description"></p>
+  </div>
+  <nav class="site-navigation">
+    <ul>
+      
+    </ul>
+  </nav>
+</header>
+
+    <main class="site-main posts-loop">
+    <article>
+
+  
+    
+    <h3 class="article-title"><span>golang-cpu-profile</span></h3>
+    
+  
+
+  <div class="article-top-meta">
+    <span class="posted-on">
+      <a href="/passages/golang-cpu-profile/" rel="bookmark">
+        <time class="entry-date published" datetime="2022-11-21T15:26:00.000Z">
+          2022-11-21
+        </time>
+      </a>
+    </span>
+  </div>
+
+
+  
+
+  <div class="article-content">
+    <div class="entry">
+      
+        <h1 id="用pprof排查CPU-Killer"><a href="#用pprof排查CPU-Killer" class="headerlink" title="用pprof排查CPU Killer"></a>用pprof排查CPU Killer</h1><h2 id="故障背景"><a href="#故障背景" class="headerlink" title="故障背景"></a>故障背景</h2><p>最近新上线了一个微服务，主要功能是定期执行各种定时任务，其中一个任务涉及到持有Redis分布式锁，并通过time.Ticker自动续期。（看到这里，也许你已经猜到了问题根源）。</p>
+<p>这个服务上线以后，没有出什么大问题，每个任务都按照预期在规定时间内完成。然而，随着时间的推移，任务开始出现超时，甚至有的时候进程已经卡顿到连相关指标监控都无法获取。</p>
+<span id="more"></span>
+
+<h2 id="初步排查"><a href="#初步排查" class="headerlink" title="初步排查"></a>初步排查</h2><p>以下是当时的CPU利用率以及服务刚启动时的对比：</p>
+<p><img src="/images/cpu-killer.png" alt="cpu-killer"></p>
+<p><img src="/images/cpu-low-use.png" alt="cpu-low-use"></p>
+<p>对于这种7*24小时运行的服务CPU利用率上升的情况，猜测的第一种可能性，一般是内存泄露导致GC繁忙消耗CPU资源。可以看到，GC耗时确实很可疑：</p>
+<p><img src="/images/gc-duration.png" alt="gc-duration"></p>
+<p>但是，到底是GC占用CPU资源导致进程卡顿，还是进程卡顿导致GC耗时增长呢？</p>
+<h2 id="排查内存"><a href="#排查内存" class="headerlink" title="排查内存"></a>排查内存</h2><p>这是当时的内存情况：</p>
+<p><img src="/images/memory-monitor.png" alt="memory-monitor"></p>
+<p>可以看到，容器内存才300MB，这么点内存会导致GC耗时一秒多？很显然，这种可能极低，GC本身的耗时和CPU资源应该很低才对，问题出在别的方面。</p>
+<p>接着，我们对比了一下进程刚启动时的内存资源监控信息：</p>
+<p><img src="/images/memory-low-use.png" alt="memory-low-use"></p>
+<p>可以得出结论，内存确实存在泄漏的情况，虽然泄漏的好像不多。这种内存占用不多却能耗费大量CPU的场景，我隐隐猜测可能是timer泄漏。</p>
+<h2 id="pprof排查"><a href="#pprof排查" class="headerlink" title="pprof排查"></a>pprof排查</h2><p>由于这个服务禁用了CGO，因此可以不考虑C库的影响。为了排查具体的CPU killer，我们需要用到golang的性能分析工具包：<a href="https://pkg.go.dev/runtime/pprof">pprof</a></p>
+<p>pprof可以对CPU profile生成火焰图，精确定位CPU消耗的具体环节：</p>
+<p><img src="/images/cpu-profile.png" alt="cpu-profile"></p>
+<p>从图中可以看出，左侧的业务逻辑仅占用了极少量CPU时间，大多数时候在忙着runtime.shchedule（GC的占用也微不可见）。</p>
+<p>而其中最醒目的就是siftdown timer这个函数了，这个似乎验证了我们的猜测。</p>
+<p>剩下一个问题，我们需要确定确实timer存在泄漏。通过pprof工具，我们对heap进行采样，确认了timer对象占用的内存在增长：</p>
+<p><img src="/images/heap-object-top1.png" alt="heap-obj-top1"></p>
+<p><img src="/images/heap-object-top2.png" alt="heap-obj-top2"></p>
+<p>通过tree命令非常顺利的就找到了泄漏的源头，是time.Ticker没有及时stop导致。涉及具体代码就不贴图了^_^</p>
+<p>最后，代码提交Review，上线，经过两天的验证，问题得以修复～</p>
+
+      
+    </div>
+
+  </div>
+
+  <div class="article-footer">
+    <div class="article-meta pull-left">
+
+    
+      
+
+    <span class="post-categories">
+      <i class="icon-categories"></i>
+        <a href="/categories/技术/">技术</a>, <a href="/categories/技术/Golang/">Golang</a>
+    </span>
+    
+
+    
+    
+
+    <span class="post-tags">
+      <i class="icon-tags"></i>
+        <a href="/tags/Golang/">Golang</a><a href="/tags/pprof/">pprof</a><a href="/tags/profile/">profile</a>
+    </span>
+    
+
+    </div>
+
+    
+  </div>
+</article>
+
+  
+
+
+
+
+
+
+
+
+
+    </main>
+
+    <footer class="site-footer">
+  <p class="site-info">
+    Proudly powered by <a href="https://hexo.io/" target="_blank">Hexo</a> and
+    Theme by <a href="https://github.com/CodeDaraW/Hacker" target="_blank">Hacker</a>
+    </br>
+    
+    &copy; 2024 比特鱼
+    
+  </p>
+</footer>
+    
+    
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,216 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  <title>RocksDB 读优化 | 鱼的记忆</title>
+
+  
+  <meta name="author" content="比特鱼">
+  
+
+  
+  <meta name="description" content="一些速记与思考，避免知识的遗忘">
+  
+
+  
+  <meta name="keywords" content="Kubernetes, Kubeflow, Golang, Java">
+  
+
+  <meta id="viewport" name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+
+  <meta property="og:title" content="RocksDB 读优化"/>
+
+  <meta property="og:site_name" content="鱼的记忆"/>
+
+  
+  <meta property="og:image" content="/favicon.ico"/>
+  
+
+  <link href="/favicon.ico" rel="icon">
+  <link rel="alternate" href="/atom.xml" title="鱼的记忆" type="application/atom+xml">
+  <link rel="stylesheet" href="/css/style.css" media="screen" type="text/css">
+<meta name="generator" content="Hexo 7.1.1"></head>
+
+
+<body>
+<div class="blog">
+  <div class="content">
+
+    <header>
+  <div class="site-branding">
+    <h1 class="site-title">
+      <a href="/">鱼的记忆</a>
+    </h1>
+    <p class="site-description"></p>
+  </div>
+  <nav class="site-navigation">
+    <ul>
+      
+    </ul>
+  </nav>
+</header>
+
+    <main class="site-main posts-loop">
+    <article>
+
+  
+    
+    <h3 class="article-title"><span>RocksDB 读优化</span></h3>
+    
+  
+
+  <div class="article-top-meta">
+    <span class="posted-on">
+      <a href="/passages/RocksDB读优化/" rel="bookmark">
+        <time class="entry-date published" datetime="2024-02-24T11:23:22.000Z">
+          2024-02-24
+        </time>
+      </a>
+    </span>
+  </div>
+
+
+  
+
+  <div class="article-content">
+    <div class="entry">
+      
+        <h2 id="RocksDB-MultiGet-优化"><a href="#RocksDB-MultiGet-优化" class="headerlink" title="RocksDB MultiGet 优化"></a>RocksDB MultiGet 优化</h2><p>去年的工作内容中涉及到RocksDB的读写优化，场景分为：大批量写；批量只读；读写TTL</p>
+<p>本文回顾批量只读场景下的优化思路，以及记录未来的计划</p>
+<h2 id="RocksDB-简单介绍"><a href="#RocksDB-简单介绍" class="headerlink" title="RocksDB 简单介绍"></a>RocksDB 简单介绍</h2><p>RocksDB 是一个基于LevelDB优化的持久化KV数据库，其存储结构是LSM-Tree，主要设计用来应对写入密集型工作负载</p>
+<h2 id="第一个问题，技术选型"><a href="#第一个问题，技术选型" class="headerlink" title="第一个问题，技术选型"></a>第一个问题，技术选型</h2><p>技术选型阶段，我们遇到一个问题，天生为写优化的RocksDB在只读场景是否有必要采用呢？</p>
+<span id="more"></span>
+
+<p>表面看起来，似乎没有了写入的需求，我们已经不需要LSM-Tree了？我们只需要一个索引查找到磁盘指针，读取数据就行了？</p>
+<p>是的，没错，情况的确是如此</p>
+<p>但是如果我们限制LSM-Tree的最大高度为1呢？LSM-Tree在这里被打平了，和我们的目标是一致的！</p>
+<h2 id="第二个问题，可观测性"><a href="#第二个问题，可观测性" class="headerlink" title="第二个问题，可观测性"></a>第二个问题，可观测性</h2><p>很明显，RocksDB的读请求处理，将会是整个请求中的高频热点</p>
+<p>除了操作系统级别的系统资源监控和perf，还有什么样的措施可以让我们对RocksDB的内部状态有足够透明的观测？</p>
+<p>基于观测到的数据，我们将来可以调整配置进一步优化性能，或者调整系统资源避免瓶颈</p>
+<p>根据RocksDB Wiki的介绍，他们提供了三个观测措施：stats（数据统计指标），perf context（单请求逻辑指标），IO context（单请求IO指标）</p>
+<p>我们简单的用了stats，其他观测措施将来有需要再使用</p>
+<p>还有一个工具，rocksdb advisor据说可以根据log推荐配置，这个以后在读写场景下介绍</p>
+<h2 id="准备工作，理解-MultiGet"><a href="#准备工作，理解-MultiGet" class="headerlink" title="准备工作，理解 MultiGet"></a>准备工作，理解 MultiGet</h2><p>虽然我们可以观测stats，但很明显，在理解了其内部原理以后，会对stats有更准确的理解</p>
+<p>优化思路，也只有在了解原理的基础上才能找到方向</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line">- DBImpl::PrepareMultiGetKeys -&gt; sort</span><br><span class="line"></span><br><span class="line">- DBImpl::MultiGet -&gt; <span class="built_in">batch</span>(<span class="number">32</span>)</span><br><span class="line"></span><br><span class="line">	- (<span class="keyword">mutable</span>)Memtable::MultiGet -&gt; <span class="built_in">Rep_</span>(SkipListRep)::Get  （只读场景忽略）</span><br><span class="line">	</span><br><span class="line">	- (immutable)MemtableList::MultiGet -&gt; Memtable::MultiGet -&gt; <span class="built_in">Rep_</span>(SkipListRep)::Get  （只读场景忽略）</span><br><span class="line"></span><br><span class="line">	- Version::Mutliget</span><br><span class="line">	</span><br><span class="line">	-- <span class="function">prepare <span class="title">get_ctx</span> <span class="params">(key, cmp, status)</span> <span class="params">(以及其他在SST文件搜索过程中的状态，比如index之类）</span></span></span><br><span class="line"><span class="params"><span class="function">	</span></span></span><br><span class="line"><span class="params"><span class="function">	-- FilePickerMultiGet::prepareNextLevel (根据key与当前文件最小/最大key的对比关系，确定下一层的搜索SST文件的边界，加快查找SST）</span></span></span><br><span class="line"><span class="params"><span class="function">	</span></span></span><br><span class="line"><span class="params"><span class="function">	-- FilePickerMultiGet::GetNextFileInLevel（在上一层确定的这一层搜索边界内确定可能包含key的SST）</span></span></span><br><span class="line"><span class="params"><span class="function">	</span></span></span><br><span class="line"><span class="params"><span class="function">	-- Version::MultiGetFromSST（从单个SST读取key）-&gt; TableCache::MultiGet</span></span></span><br><span class="line"><span class="params"><span class="function">	</span></span></span><br><span class="line"><span class="params"><span class="function">		-- TableCache::GetFromRowCache</span></span></span><br><span class="line"><span class="params"><span class="function">		</span></span></span><br><span class="line"><span class="params"><span class="function">		-- TableCache::FindTable  -&gt; cache::Lookup <span class="keyword">or</span> TableCache::GetTableReader</span></span></span><br><span class="line"><span class="params"><span class="function">		</span></span></span><br><span class="line"><span class="params"><span class="function">		-- BlockBasedTable::MultiGet</span></span></span><br><span class="line"><span class="params"><span class="function">		</span></span></span><br><span class="line"><span class="params"><span class="function">			-- BlockBasedTable::FullFilterKeysMayMatch(两种bloomfilter:Full <span class="keyword">or</span> Block)</span></span></span><br><span class="line"><span class="params"><span class="function">			</span></span></span><br><span class="line"><span class="params"><span class="function">			-- BlockBasedTable::NewIndexIterator(根据rep-&gt;footer.index_handle加载index block，也可能cache)</span></span></span><br><span class="line"><span class="params"><span class="function">			</span></span></span><br><span class="line"><span class="params"><span class="function">			-- <span class="keyword">for</span> keys </span></span></span><br><span class="line"><span class="params"><span class="function">			</span></span></span><br><span class="line"><span class="params"><span class="function">				-&gt; indexiter::Seek</span></span></span><br><span class="line"><span class="params"><span class="function">				</span></span></span><br><span class="line"><span class="params"><span class="function">				-&gt; block_cache::StartAsyncLookupFull</span></span></span><br><span class="line"><span class="params"><span class="function">				</span></span></span><br><span class="line"><span class="params"><span class="function">			-- block_cache::WaitAll</span></span></span><br><span class="line"><span class="params"><span class="function">			</span></span></span><br><span class="line"><span class="params"><span class="function">			-- BlockBasedTable::RetrieveMultipleBlocks <span class="keyword">if</span> cache miss</span></span></span><br><span class="line"><span class="params"><span class="function">			</span></span></span><br><span class="line"><span class="params"><span class="function">				-&gt; BlockBasedTable::RetrieveBlock</span></span></span><br><span class="line"><span class="params"><span class="function">			</span></span></span><br><span class="line"><span class="params"><span class="function">			-- <span class="keyword">for</span> keys</span></span></span><br><span class="line"><span class="params"><span class="function">			</span></span></span><br><span class="line"><span class="params"><span class="function">				-&gt; BlockBasedTable::NewDataBlockIterator</span></span></span><br><span class="line"><span class="params"><span class="function">				</span></span></span><br><span class="line"><span class="params"><span class="function">				-&gt; DataBlockIter::SeekForGet</span></span></span><br><span class="line"><span class="params"><span class="function">				</span></span></span><br><span class="line"><span class="params"><span class="function">				-&gt; GetContext::SaveValue</span></span></span><br></pre></td></tr></table></figure>
+
+<h2 id="场景分析"><a href="#场景分析" class="headerlink" title="场景分析"></a>场景分析</h2><p>我们的需求是向多个实例发送3万个Key并返回Value</p>
+<h3 id="单节点观测到的数据："><a href="#单节点观测到的数据：" class="headerlink" title="单节点观测到的数据："></a>单节点观测到的数据：</h3><ul>
+<li><p>从系统的角度看，IOPS比较高，应该是因为大量SST文件被读取；由于3万个Key范围太广，每个SST几乎都被波及</p>
+</li>
+<li><p>IO latency数据忘了，但是由于SSD的特性，空间占用太高会影响读写</p>
+</li>
+<li><p>从stats观察到的现象：</p>
+</li>
+</ul>
+<ul>
+<li><p>keys.read很高，但是keys.found很低，大量key在其他实例上属于无效查询</p>
+</li>
+<li><p>blockcache 命中率一般，这也和IOPS高相关</p>
+</li>
+</ul>
+<p>结合观测数据和实现原理，我们发现优化空间还是非常大的：</p>
+<h3 id="机制"><a href="#机制" class="headerlink" title="机制"></a>机制</h3><ul>
+<li><p>我们注意到，MultiGet内部其实是把32个key作为一批处理，顺序处理多批数据；为了充分利用SSD的IO并发与带宽，我们可以多线程读取</p>
+</li>
+<li><p>在row cache生效前，仍然需要加载SST meta信息以确定是否要进一步查询SST，这些信息可以缓存，所以还好</p>
+</li>
+<li><p>在SST内部搜索时，row.cache 类似于Mysql中行缓存，对于解决热点key的情况非常有效</p>
+</li>
+<li><p>在SST内部搜索时，可以选择bloomfilter在SST级别生效还是Block级别生效，当然越早生效越好</p>
+</li>
+<li><p>对于只读场景，其实可以考虑数据库级别过滤器，或者把key路由到相关节点，避免无效查找</p>
+</li>
+<li><p>加载索引容易被IO抖动影响，因此建议放在block cache里面</p>
+</li>
+<li><p>选择哈希索引还是二分索引？哈希索引效率高但是内存局部性不够好，可能存在CPU Stall；这个保持默认</p>
+</li>
+<li><p>是否选择二级索引？索引二级索引对随机读是比较好的，对scan场景就反而导致多次IO</p>
+</li>
+<li><p>RocksDB支持Pin机制，避免多余的数据拷贝，只要记得释放Slice就行</p>
+</li>
+<li><p>数据压缩，节省了一半的空间</p>
+</li>
+</ul>
+<h2 id="优化效果"><a href="#优化效果" class="headerlink" title="优化效果"></a>优化效果</h2><ul>
+<li><p>数据压缩，对读取效果影响不大</p>
+</li>
+<li><p>数据路由大幅过滤了无效IO，SST级别的bloomfilter过滤效果不大(因为在路由时已经过滤了)，大幅解放了SSD的IOPS，为接下来并行IO打下基础</p>
+</li>
+<li><p>row.cache在1&#x2F;3左右，性价比比较低，聊胜于无吧</p>
+</li>
+<li><p>filter&#x2F;index缓存这个没有实施，因为性能已经满足需要</p>
+</li>
+<li><p>二级索引同上</p>
+</li>
+<li><p>Pin机制必须的</p>
+</li>
+<li><p>以32为一批并行调用MultiGet，避免了无效等待，最终DB总耗时从数百毫秒降低到毫秒级别</p>
+</li>
+</ul>
+<h2 id="结语"><a href="#结语" class="headerlink" title="结语"></a>结语</h2><p>为了追求极致的性能，RocksDB里面隐藏了非常多的性能细节,也提供了非常灵活的配置，使用者可以根据负载调整配置即可</p>
+<p>目前还没有到需要魔改RocksDB的程度，未来碰到了再探索进一步的优化方向</p>
+
+      
+    </div>
+
+  </div>
+
+  <div class="article-footer">
+    <div class="article-meta pull-left">
+
+    
+      
+
+    <span class="post-categories">
+      <i class="icon-categories"></i>
+        <a href="/categories/技术/">技术</a>, <a href="/categories/技术/KV数据库/">KV数据库</a>
+    </span>
+    
+
+    
+    
+
+    <span class="post-tags">
+      <i class="icon-tags"></i>
+        <a href="/tags/C/">C++</a><a href="/tags/RocksDB/">RocksDB</a>
+    </span>
+    
+
+    </div>
+
+    
+  </div>
+</article>
+
+  
+
+
+
+
+
+
+
+
+
+    </main>
+
+    <footer class="site-footer">
+  <p class="site-info">
+    Proudly powered by <a href="https://hexo.io/" target="_blank">Hexo</a> and
+    Theme by <a href="https://github.com/CodeDaraW/Hacker" target="_blank">Hacker</a>
+    </br>
+    
+    &copy; 2024 比特鱼
+    
+  </p>
+</footer>
+    
+    
+  </div>
+</div>
+</body>
+</html>

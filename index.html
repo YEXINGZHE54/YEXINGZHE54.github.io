@@ -59,6 +59,71 @@
 
   
     
+    <h3 class="article-title"><a href="/passages/perf-practice-on-xapian-optimize/"><span>记一次Perf实践（Xapian读优化）</span></a></h3>
+    
+  
+
+  <div class="article-top-meta">
+    <span class="posted-on">
+      <a href="/passages/perf-practice-on-xapian-optimize/" rel="bookmark">
+        <time class="entry-date published" datetime="2024-03-16T14:04:36.000Z">
+          2024-03-16
+        </time>
+      </a>
+    </span>
+  </div>
+
+
+  
+
+  <div class="article-content">
+    <div class="entry">
+      
+        <h2 id="Xapian-读优化"><a href="#Xapian-读优化" class="headerlink" title="Xapian 读优化"></a>Xapian 读优化</h2><p>说一下本文的背景. </p>
+<p>我们曾经用Xapian作为内部的倒排索引(只读),在流量比较高的情况下,调用方感知延迟上升,需要对倒排服务进行性能优化.</p>
+<h2 id="关于调用方延迟的影响因素"><a href="#关于调用方延迟的影响因素" class="headerlink" title="关于调用方延迟的影响因素"></a>关于调用方延迟的影响因素</h2><p>在我们的服务场景里,暂时还没到网卡影响性能的程度,网络协议也没有成为瓶颈,因此调用方观察到的延迟主要还是发生在服务端.</p>
+<p>现在的后端服务都是比较成熟的框架,通常会有Accept线程(listen and accept), IO线程(读写request&#x2F;response,可能还包括编解码),Worker线程(也叫CPU线程,实际干活的).</p>
+<p>不同线程间通常是通过队列交换消息,比如Acceptor线程将建立的连接分给IO线程处理IO事件, IO线程将完整解码请求入队等待Worker线程处理, 最终的response也要由队列送回IO线程.</p>
+<p>因此,请求的实际服务端延迟通常会受这些因素影响: IO读写编解码, 请求在队列中等待的时间, 实际CPU计算, 所依赖的其他资源, 内部业务的锁竞争.</p>
+        
+      
+    </div>
+
+  </div>
+
+  <div class="article-footer">
+    <div class="article-meta pull-left">
+
+    
+      
+
+    <span class="post-categories">
+      <i class="icon-categories"></i>
+        <a href="/categories/技术/">技术</a>, <a href="/categories/技术/KV数据库/">KV数据库</a>
+    </span>
+    
+
+    
+    
+
+    <span class="post-tags">
+      <i class="icon-tags"></i>
+        <a href="/tags/C/">C++</a><a href="/tags/Xapian/">Xapian</a><a href="/tags/perf/">perf</a>
+    </span>
+    
+
+    </div>
+
+    
+  </div>
+</article>
+
+
+
+  <article>
+
+  
+    
     <h3 class="article-title"><a href="/passages/RocksDB读优化/"><span>RocksDB 读优化</span></a></h3>
     
   
@@ -613,68 +678,6 @@
     <span class="post-tags">
       <i class="icon-tags"></i>
         <a href="/tags/distributed/">distributed</a><a href="/tags/cloud/">cloud</a><a href="/tags/coursera/">coursera</a>
-    </span>
-    
-
-    </div>
-
-    
-  </div>
-</article>
-
-
-
-  <article>
-
-  
-    
-    <h3 class="article-title"><a href="/passages/paxos-simpliy/"><span>paxos-simpliy</span></a></h3>
-    
-  
-
-  <div class="article-top-meta">
-    <span class="posted-on">
-      <a href="/passages/paxos-simpliy/" rel="bookmark">
-        <time class="entry-date published" datetime="2019-05-01T17:15:19.000Z">
-          2019-05-02
-        </time>
-      </a>
-    </span>
-  </div>
-
-
-  
-
-  <div class="article-content">
-    <div class="entry">
-      
-        <h2 id="Paxos-Made-Simple-读后感"><a href="#Paxos-Made-Simple-读后感" class="headerlink" title="Paxos Made Simple 读后感"></a>Paxos Made Simple 读后感</h2><p>近来在Cousera上学习 <a href="https://www.coursera.org/specializations/cloud-computing">Cloud Computing Concept Part 1</a>，其中涉及到了对Paxos算法的介绍。Paxos算法固然是比较难懂的，但是幸好有简化版论文 <a href="http://www.cs.utexas.edu/users/lorenzo/corsi/cs380d/past/03F/notes/paxos-simple.pdf?spm=a2c4e.11153940.blogcont85470.8.76e44d9eRGbB30&file=paxos-simple.pdf">Paxos Made Simple</a>，相对好理解很多，分享一下自己的理解。</p>
-<h2 id="Paxos算法的问题背景"><a href="#Paxos算法的问题背景" class="headerlink" title="Paxos算法的问题背景"></a>Paxos算法的问题背景</h2><p>分布式系统进程模型：多个分布式进程节点，彼此只能通过网络消息通信；整个系统是异步的，时钟可能不同步，时间流速也可能不同，消息可能丢失，乱序到达，也可能无限延迟，任一进程可能失败退出（但是至少超过半数节点存活并可以互相通信）。</p>
-<p>分布式一致性问题：分布式系统中每个进程都有一个变量y，最初处于为未初始化状态，一旦变量y的值被确定，就不允许被修改；经过有限步骤，使得所有活着的进程都确定同一个y值，这就是一致性问题</p>
-        
-      
-    </div>
-
-  </div>
-
-  <div class="article-footer">
-    <div class="article-meta pull-left">
-
-    
-      
-
-    <span class="post-categories">
-      <i class="icon-categories"></i>
-        <a href="/categories/技术/">技术</a>, <a href="/categories/技术/分布式理论/">分布式理论</a>
-    </span>
-    
-
-    
-    
-
-    <span class="post-tags">
-      <i class="icon-tags"></i>
-        <a href="/tags/distributed/">distributed</a><a href="/tags/consensus/">consensus</a><a href="/tags/paxos/">paxos</a>
     </span>
     
 

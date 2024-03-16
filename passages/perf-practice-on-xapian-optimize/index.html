@@ -1,0 +1,189 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  <title>记一次Perf实践（Xapian读优化） | 鱼的记忆</title>
+
+  
+  <meta name="author" content="比特鱼">
+  
+
+  
+  <meta name="description" content="一些速记与思考，避免知识的遗忘">
+  
+
+  
+  <meta name="keywords" content="Kubernetes, Kubeflow, Golang, Java">
+  
+
+  <meta id="viewport" name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+
+  <meta property="og:title" content="记一次Perf实践（Xapian读优化）"/>
+
+  <meta property="og:site_name" content="鱼的记忆"/>
+
+  
+  <meta property="og:image" content="/favicon.ico"/>
+  
+
+  <link href="/favicon.ico" rel="icon">
+  <link rel="alternate" href="/atom.xml" title="鱼的记忆" type="application/atom+xml">
+  <link rel="stylesheet" href="/css/style.css" media="screen" type="text/css">
+<meta name="generator" content="Hexo 7.1.1"></head>
+
+
+<body>
+<div class="blog">
+  <div class="content">
+
+    <header>
+  <div class="site-branding">
+    <h1 class="site-title">
+      <a href="/">鱼的记忆</a>
+    </h1>
+    <p class="site-description"></p>
+  </div>
+  <nav class="site-navigation">
+    <ul>
+      
+    </ul>
+  </nav>
+</header>
+
+    <main class="site-main posts-loop">
+    <article>
+
+  
+    
+    <h3 class="article-title"><span>记一次Perf实践（Xapian读优化）</span></h3>
+    
+  
+
+  <div class="article-top-meta">
+    <span class="posted-on">
+      <a href="/passages/perf-practice-on-xapian-optimize/" rel="bookmark">
+        <time class="entry-date published" datetime="2024-03-16T14:04:36.000Z">
+          2024-03-16
+        </time>
+      </a>
+    </span>
+  </div>
+
+
+  
+
+  <div class="article-content">
+    <div class="entry">
+      
+        <h2 id="Xapian-读优化"><a href="#Xapian-读优化" class="headerlink" title="Xapian 读优化"></a>Xapian 读优化</h2><p>说一下本文的背景. </p>
+<p>我们曾经用Xapian作为内部的倒排索引(只读),在流量比较高的情况下,调用方感知延迟上升,需要对倒排服务进行性能优化.</p>
+<h2 id="关于调用方延迟的影响因素"><a href="#关于调用方延迟的影响因素" class="headerlink" title="关于调用方延迟的影响因素"></a>关于调用方延迟的影响因素</h2><p>在我们的服务场景里,暂时还没到网卡影响性能的程度,网络协议也没有成为瓶颈,因此调用方观察到的延迟主要还是发生在服务端.</p>
+<p>现在的后端服务都是比较成熟的框架,通常会有Accept线程(listen and accept), IO线程(读写request&#x2F;response,可能还包括编解码),Worker线程(也叫CPU线程,实际干活的).</p>
+<p>不同线程间通常是通过队列交换消息,比如Acceptor线程将建立的连接分给IO线程处理IO事件, IO线程将完整解码请求入队等待Worker线程处理, 最终的response也要由队列送回IO线程.</p>
+<p>因此,请求的实际服务端延迟通常会受这些因素影响: IO读写编解码, 请求在队列中等待的时间, 实际CPU计算, 所依赖的其他资源, 内部业务的锁竞争.</p>
+<span id="more"></span>
+
+<p>IO读写编解码, 请求在队列中等待的时间这两项对于Worker是无感知的,一般是在框架中通过观察者模式暴露. </p>
+<p>比如fbthrift的 ThreadManager::Observer 和 server::TServerObserver, 就提供了相关事件次数和有关时间.</p>
+<h2 id="Worker延迟的影响因素"><a href="#Worker延迟的影响因素" class="headerlink" title="Worker延迟的影响因素"></a>Worker延迟的影响因素</h2><p>在Worker处理请求期间, 延迟除了自身的业务逻辑计算(On-CPU),还与等待其他资源, 等待业务锁竞争(这些都算是Off-CPU)相关.</p>
+<p><img src="/images/offcputracing-1000.png" alt="on-cpu-and-off-cpu"></p>
+<p>本文所提及的优化就是找出on-cpu的热点部分进行优化.</p>
+<p>关于Off-CPU部分其实也可以进一步优化,但是Off-CPU的分析比较困难,容易受IO线程的wait干扰,以后看看有没有实践的机会.</p>
+<h2 id="Perf"><a href="#Perf" class="headerlink" title="Perf"></a>Perf</h2><p>Linux内核的Perf工具,为我们提供了分析On-CPU热点瓶颈的能力, 见<a href="https://perf.wiki.kernel.org/index.php/Tutorial">Wiki</a>.</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">perf record -F99 -g -s -p &lt;pid&gt;</span><br><span class="line"></span><br><span class="line"><span class="comment"># 过一段时间后</span></span><br><span class="line"><span class="comment"># Ctrl-C结束采样</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 生成火焰图</span></span><br><span class="line">perf script | stackcollapse-perf.pl | flamegraph.pl &gt; flame.svg</span><br><span class="line"></span><br><span class="line"><span class="comment"># 拷贝文件到本机打开</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="分析与优化"><a href="#分析与优化" class="headerlink" title="分析与优化"></a>分析与优化</h2><p>先上图</p>
+<p><img src="/images/before-perf-flame.svg" alt="优化前"></p>
+<p>分析结论:</p>
+<p>很明显,在图中占CPU大头开销的是 <code>GlassPostList::move_forward_in_chunk</code> 和 内核函数 <code>ccopy_user_enhanced_fast_string</code>, </p>
+<p>前者是xapian存储引擎中的数据解码逻辑,后者是pread系统调用过程中拷贝数据,看起来两者都是无懈可击?</p>
+<p>随着我仔细在图中查看, 我发现CPU的40%时间是花在了 <code>GlassDatabase::get_doclength</code> 上, 这个函数里面也包含了 <code>GlassPostList::move_forward_in_chunk</code> 和 内核函数 <code>ccopy_user_enhanced_fast_string</code></p>
+<p>从 <code>GlassDatabase::get_doclength</code> 的名字上看,似乎用一个简单的内存数组就能解决,从而完全节省出40%的CPU时间!</p>
+<p>优化方案:</p>
+<ol>
+<li><p>初始化, 预先计算好doclength数组,并保存在文件里</p>
+</li>
+<li><p>每个线程以mmap的方式加载,共享内存(xapian坑爹的一点,必须每个线程打开一个db)</p>
+</li>
+<li><p>修改 <code>GlassDatabase::get_doclength</code> 的实现,从mmap数组中返回doclength</p>
+</li>
+</ol>
+<p>优化后的样子:</p>
+<p><img src="/images/after-perf-flame.svg" alt="优化后"></p>
+<p>以及前后的容量,延迟对比:</p>
+<p><img src="/images/xapian-tps.png" alt="TPS"></p>
+<p><img src="/images/xapian-latency.png" alt="Latency"></p>
+<p>可以很明显的看到:</p>
+<p>每秒TPS从500上升到了800, 而延迟反而从62ms下降到48ms(优化前后CPU利用率都在800%上下) ^_^</p>
+<p>与此同时,从火焰图上也能看出, <code>GlassDatabase::get_doclength</code>占用时间已经很小了,接近1%</p>
+<p>现在的热点是 <code>GlassPostList::skip_to</code> ,这个源头在于xapian的GlassDB存储引擎,后续的优化重点就是设计一个更高效的存储引擎,提升数据解码性能</p>
+<p>根据On-CPU时间的定义, 我们可以计算出优化前后的平均On-CPU时间分别是: 8*1000 &#x2F; 500 &#x3D; 16ms 和 8 * 1000 &#x2F; 800 &#x3D; 10ms, 也就是说这次优化节省了6ms</p>
+<p>但实际上, 优化前后的延迟分别是 62ms 和 48ms, 根据公式 avg-latency-ms &#x3D; off-cpu-ms + cpu-used * 1000ms &#x2F; TPS</p>
+<p>也就是说Off-CPU部分的时间分别是: 62-16 &#x3D; 46ms 和 48 - 10 &#x3D; 38ms, 这次优化也节省了8ms的Off-CPU时间, 主要是避免了IO开销</p>
+<p>在考虑到优化后IOPS其实是变高了, 实际Off-CPU实际的节省应该会更多一些</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>对于静态定长索引,其实最优的存储结构就是数组(或者mmap),然后用offset读取就好了,(更近一步可以用cache优化)</p>
+<p>从这次的计算中,我们能看出,Off-CPU部分的时间占比太高,这在未来也会是优化的主要重点</p>
+
+      
+    </div>
+
+  </div>
+
+  <div class="article-footer">
+    <div class="article-meta pull-left">
+
+    
+      
+
+    <span class="post-categories">
+      <i class="icon-categories"></i>
+        <a href="/categories/技术/">技术</a>, <a href="/categories/技术/KV数据库/">KV数据库</a>
+    </span>
+    
+
+    
+    
+
+    <span class="post-tags">
+      <i class="icon-tags"></i>
+        <a href="/tags/C/">C++</a><a href="/tags/Xapian/">Xapian</a><a href="/tags/perf/">perf</a>
+    </span>
+    
+
+    </div>
+
+    
+  </div>
+</article>
+
+  
+
+
+
+
+
+
+
+
+
+    </main>
+
+    <footer class="site-footer">
+  <p class="site-info">
+    Proudly powered by <a href="https://hexo.io/" target="_blank">Hexo</a> and
+    Theme by <a href="https://github.com/CodeDaraW/Hacker" target="_blank">Hacker</a>
+    </br>
+    
+    &copy; 2024 比特鱼
+    
+  </p>
+</footer>
+    
+    
+  </div>
+</div>
+</body>
+</html>

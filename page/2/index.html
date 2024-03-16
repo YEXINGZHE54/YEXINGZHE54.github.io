@@ -59,6 +59,68 @@
 
   
     
+    <h3 class="article-title"><a href="/passages/paxos-simpliy/"><span>paxos-simpliy</span></a></h3>
+    
+  
+
+  <div class="article-top-meta">
+    <span class="posted-on">
+      <a href="/passages/paxos-simpliy/" rel="bookmark">
+        <time class="entry-date published" datetime="2019-05-01T17:15:19.000Z">
+          2019-05-02
+        </time>
+      </a>
+    </span>
+  </div>
+
+
+  
+
+  <div class="article-content">
+    <div class="entry">
+      
+        <h2 id="Paxos-Made-Simple-读后感"><a href="#Paxos-Made-Simple-读后感" class="headerlink" title="Paxos Made Simple 读后感"></a>Paxos Made Simple 读后感</h2><p>近来在Cousera上学习 <a href="https://www.coursera.org/specializations/cloud-computing">Cloud Computing Concept Part 1</a>，其中涉及到了对Paxos算法的介绍。Paxos算法固然是比较难懂的，但是幸好有简化版论文 <a href="http://www.cs.utexas.edu/users/lorenzo/corsi/cs380d/past/03F/notes/paxos-simple.pdf?spm=a2c4e.11153940.blogcont85470.8.76e44d9eRGbB30&file=paxos-simple.pdf">Paxos Made Simple</a>，相对好理解很多，分享一下自己的理解。</p>
+<h2 id="Paxos算法的问题背景"><a href="#Paxos算法的问题背景" class="headerlink" title="Paxos算法的问题背景"></a>Paxos算法的问题背景</h2><p>分布式系统进程模型：多个分布式进程节点，彼此只能通过网络消息通信；整个系统是异步的，时钟可能不同步，时间流速也可能不同，消息可能丢失，乱序到达，也可能无限延迟，任一进程可能失败退出（但是至少超过半数节点存活并可以互相通信）。</p>
+<p>分布式一致性问题：分布式系统中每个进程都有一个变量y，最初处于为未初始化状态，一旦变量y的值被确定，就不允许被修改；经过有限步骤，使得所有活着的进程都确定同一个y值，这就是一致性问题</p>
+        
+      
+    </div>
+
+  </div>
+
+  <div class="article-footer">
+    <div class="article-meta pull-left">
+
+    
+      
+
+    <span class="post-categories">
+      <i class="icon-categories"></i>
+        <a href="/categories/技术/">技术</a>, <a href="/categories/技术/分布式理论/">分布式理论</a>
+    </span>
+    
+
+    
+    
+
+    <span class="post-tags">
+      <i class="icon-tags"></i>
+        <a href="/tags/distributed/">distributed</a><a href="/tags/consensus/">consensus</a><a href="/tags/paxos/">paxos</a>
+    </span>
+    
+
+    </div>
+
+    
+  </div>
+</article>
+
+
+
+  <article>
+
+  
+    
     <h3 class="article-title"><a href="/passages/gossip-protocol/"><span>gossip-protocol</span></a></h3>
     
   
